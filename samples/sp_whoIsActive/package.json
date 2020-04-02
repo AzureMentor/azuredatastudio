@@ -2,14 +2,14 @@
     "name": "whoisactive",
     "displayName": "whoisactive",
     "description": "sp_whoisactive for Azure Data Studio",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "publisher": "Microsoft",
     "preview": true,
     "engines": {
-        "vscode": "^1.17.0",
-        "sqlops": "*"
+        "vscode": "^1.26.0",
+        "azdata": "^1.11.0"
     },
-    "icon": "images/sqlserver.png",
+    "icon": "images/extension.png",
     "license": "SEE LICENSE IN LICENSE.txt",
     "repository": "https://github.com/Microsoft/azuredatastudio",
     "categories": [
@@ -241,17 +241,14 @@
         "compile": "gulp compile",
         "watch": "gulp watch",
         "typings": "gulp copytypings",
-        "postinstall": "node ./node_modules/vscode/bin/install && node ./node_modules/sqlops/bin/install && gulp copytypings"
+        "postinstall": "node ./node_modules/vscode/bin/install && gulp copytypings"
     },
     "dependencies": {
         "fs-extra": "^5.0.0",
-        "handlebars": "^4.0.11",
-        "openurl": "^1.1.1",
-        "vscode-nls": "2.0.2",
-        "sqlops": "github:anthonydresser/sqlops-extension-sqlops"
+        "handlebars": "^4.5.3",
+        "openurl": "^1.1.1"
     },
     "devDependencies": {
-        "@types/handlebars": "^4.0.11",
         "@types/mocha": "^2.2.42",
         "@types/node": "^7.0.43",
         "child-process-promise": "^2.2.1",
@@ -266,7 +263,7 @@
         "tslint": "^3.14.0",
         "typemoq": "^2.1.0",
         "typescript": "^2.6.1",
-        "vscode": "^1.1.6",
-        "vsce": "1.36.2"
+        "vsce": "1.36.2",
+        "vscode": "^1.1.6"
     }
 }

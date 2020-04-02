@@ -2,10 +2,9 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { RequestType } from 'vscode-languageclient';
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 
 // ------------------------------- < Resource Events > ------------------------------------
 export namespace CreateFirewallRuleRequest {
@@ -18,14 +17,14 @@ export namespace HandleFirewallRuleRequest {
 
 // Firewall rule interfaces
 export interface CreateFirewallRuleParams {
-	account: sqlops.Account;
+	account: azdata.Account;
 	serverName: string;
 	startIpAddress: string;
 	endIpAddress: string;
 	securityTokenMappings: {};
 }
 
-export interface CreateFirewallRuleResponse {
+interface CreateFirewallRuleResponse {
 	result: boolean;
 	errorMessage: string;
 }
@@ -36,7 +35,7 @@ export interface HandleFirewallRuleParams {
 	connectionTypeId: string;
 }
 
-export interface HandleFirewallRuleResponse {
+interface HandleFirewallRuleResponse {
 	result: boolean;
 	ipAddress: string;
 }

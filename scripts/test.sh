@@ -1,20 +1,16 @@
 #!/bin/bash
 
-
-if [[ "$OSTYPE" == "darwin"* ]]; then
+PASSED_ARGS="$@"
+if [[ "$OSTYPE" == "darwin"* ]] || [[ "$AGENT_OS" == "Darwin"* ]]; then
 	realpath() { [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"; }
 	ROOT=$(dirname $(dirname $(realpath "$0")))
-
-	# On Linux with Electron 2.0.x running out of a VM causes
-	# a freeze so we only enable this flag on macOS
-	export ELECTRON_ENABLE_LOGGING=1
 else
 	ROOT=$(dirname $(dirname $(readlink -f $0)))
 fi
 
 cd $ROOT
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
+if [[ "$OSTYPE" == "darwin"* ]] || [[ "$AGENT_OS" == "Darwin"* ]]; then
 	NAME=`node -p "require('./product.json').nameLong"`
 	CODE="./.build/electron/$NAME.app/Contents/MacOS/Electron"
 else
@@ -22,20 +18,28 @@ else
 	CODE=".build/electron/$NAME"
 fi
 
+# Default to only running stable tests if test grep isn't set
+if [[ "$ADS_TEST_GREP" == "" ]]; then
+	echo Running stable tests only
+	export ADS_TEST_GREP="@UNSTABLE@"
+	export ADS_TEST_INVERT_GREP=1
+fi
+
 # Node modules
 test -d node_modules || yarn
 
 # Get electron
-node build/lib/electron.js || ./node_modules/.bin/gulp electron
+yarn electron
 
 # Unit Tests
-export ELECTRON_RUN_AS_NODE=1
-if [[ "$OSTYPE" == "darwin"* ]]; then
+if [[ "$OSTYPE" == "darwin"* ]] || [[ "$AGENT_OS" == "Darwin"* ]]; then
 	cd $ROOT ; ulimit -n 4096 ; \
+		ELECTRON_ENABLE_LOGGING=1 \
 		"$CODE" \
-		node_modules/mocha/bin/_mocha "$@"
+		test/unit/electron/index.js "$@"
 else
 	cd $ROOT ; \
+		ELECTRON_ENABLE_LOGGING=1 \
 		"$CODE" \
-		node_modules/mocha/bin/_mocha "$@"
+		test/unit/electron/index.js --no-sandbox "$@" # Electron 6 introduces a chrome-sandbox that requires root to run. This can fail. Disable sandbox via --no-sandbox.
 fi

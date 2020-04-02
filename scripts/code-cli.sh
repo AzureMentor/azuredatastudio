@@ -22,10 +22,19 @@ function code() {
 	test -d node_modules || yarn
 
 	# Get electron
-	node build/lib/electron.js || ./node_modules/.bin/gulp electron
+	yarn electron
+
+	# Manage built-in extensions
+	if [[ "$1" == "--builtin" ]]; then
+		exec "$CODE" build/builtin
+		return
+	fi
+
+	# Sync built-in extensions
+	node build/lib/builtInExtensions.js
 
 	# Build
-	test -d out || ./node_modules/.bin/gulp compile
+	test -d out || yarn compile
 
 	ELECTRON_RUN_AS_NODE=1 \
 	NODE_ENV=development \

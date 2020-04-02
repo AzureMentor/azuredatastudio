@@ -5,8 +5,8 @@
     "version": "0.1.0",
     "publisher": "Microsoft",
     "engines": {
-        "vscode": "^1.19.0",
-        "sqlops": "*"
+        "vscode": "^1.26.0",
+        "azdata": "*"
     },
     "license": "SEE LICENSE IN LICENSE.txt",
     "repository": "https://github.com/Microsoft/azuredatastudio",
@@ -109,11 +109,11 @@
                                 "tasks-widget": [
                                     {
                                         "name": "backup",
-                                        "when": "!mssql:iscloud"
+                                        "when": "!mssql:iscloud && mssql:engineedition != 11"
                                     },
                                     {
                                         "name": "restore",
-                                        "when": "!mssql:iscloud"
+                                        "when": "!mssql:iscloud && mssql:engineedition != 11"
                                     },
                                     "configureDashboard",
                                     "newQuery"
@@ -163,7 +163,7 @@
         "snippets": []
     },
     "scripts": {
-        "prepare": "node ./node_modules/sqlops/bin/install",
+        "prepare": "node ./node_modules/azdata/bin/install",
         "build": "gulp build",
         "compile": "gulp compile",
         "watch": "gulp watch",
@@ -171,13 +171,12 @@
     },
     "dependencies": {
         "fs-extra": "^5.0.0",
-        "handlebars": "^4.0.11",
-        "vscode-nls": "2.0.2"
+        "handlebars": "^4.5.3"
     },
     "devDependencies": {
-        "@types/handlebars": "^4.0.11",
         "@types/mocha": "^2.2.42",
         "@types/node": "^7.0.43",
+        "azdata": "^1.0.0",
         "child-process-promise": "^2.2.1",
         "del": "^3.0.0",
         "gulp": "^4.0.0",
@@ -190,8 +189,7 @@
         "tslint": "^3.14.0",
         "typemoq": "^2.1.0",
         "typescript": "^2.6.1",
-        "vscode": "^1.1.6",
-        "sqlops": "github:anthonydresser/sqlops-extension-sqlops",
-        "vsce": "1.36.2"
+        "vsce": "1.36.2",
+        "vscode": "^1.1.6"
     }
 }

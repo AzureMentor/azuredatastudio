@@ -2,16 +2,13 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { SqlOpsDataClient, ClientOptions, SqlOpsFeature } from 'dataprotocol-client';
-import * as path from 'path';
 import { IConfig, ServerProvider } from 'service-downloader';
 import { ServerOptions, RPCMessageType, ClientCapabilities, ServerCapabilities, TransportKind } from 'vscode-languageclient';
 import { Disposable } from 'vscode';
 import * as UUID from 'vscode-languageclient/lib/utils/uuid';
-
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 
 import * as Contracts from './contracts';
 import * as Constants from './constants';
@@ -43,8 +40,8 @@ class CredentialsFeature extends SqlOpsFeature<any> {
 	protected registerProvider(options: any): Disposable {
 		const client = this._client;
 
-		let readCredential = (credentialId: string): Thenable<sqlops.Credential> => {
-			return client.sendRequest(Contracts.ReadCredentialRequest.type, { credentialId });
+		let readCredential = (credentialId: string): Thenable<azdata.Credential> => {
+			return client.sendRequest(Contracts.ReadCredentialRequest.type, { credentialId, password: undefined });
 		};
 
 		let saveCredential = (credentialId: string, password: string): Thenable<boolean> => {
@@ -52,10 +49,10 @@ class CredentialsFeature extends SqlOpsFeature<any> {
 		};
 
 		let deleteCredential = (credentialId: string): Thenable<boolean> => {
-			return client.sendRequest(Contracts.DeleteCredentialRequest.type, { credentialId });
+			return client.sendRequest(Contracts.DeleteCredentialRequest.type, { credentialId, password: undefined });
 		};
 
-		return sqlops.credentials.registerProvider({
+		return azdata.credentials.registerProvider({
 			deleteCredential,
 			readCredential,
 			saveCredential,
@@ -73,7 +70,7 @@ export class CredentialStore {
 	private _client: SqlOpsDataClient;
 	private _config: IConfig;
 
-	constructor(baseConfig: IConfig) {
+	constructor(private logPath: string, baseConfig: IConfig) {
 		if (baseConfig) {
 			this._config = JSON.parse(JSON.stringify(baseConfig));
 			this._config.executableFiles = ['MicrosoftSqlToolsCredentials.exe', 'MicrosoftSqlToolsCredentials'];
@@ -86,7 +83,7 @@ export class CredentialStore {
 			providerId: Constants.providerId,
 			features: [CredentialsFeature]
 		};
-		serverdownloader.getOrDownloadServer().then(e => {
+		return serverdownloader.getOrDownloadServer().then(e => {
 			let serverOptions = this.generateServerOptions(e);
 			this._client = new SqlOpsDataClient(Constants.serviceName, serverOptions, clientOptions);
 			this._client.start();
@@ -100,11 +97,7 @@ export class CredentialStore {
 	}
 
 	private generateServerOptions(executablePath: string): ServerOptions {
-		let launchArgs = [];
-		launchArgs.push('--log-dir');
-		let logFileLocation = path.join(Utils.getDefaultLogLocation(), 'mssql');
-		launchArgs.push(logFileLocation);
-
+		let launchArgs = Utils.getCommonLaunchArgsAndCleanupOldLogFiles(this.logPath, 'credentialstore.log', executablePath);
 		return { command: executablePath, args: launchArgs, transport: TransportKind.stdio };
 	}
 }

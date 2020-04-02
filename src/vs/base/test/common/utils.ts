@@ -3,44 +3,55 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
+import { join } from 'vs/base/common/path';
+import { URI } from 'vs/base/common/uri';
+import { canceled } from 'vs/base/common/errors';
+import { isWindows } from 'vs/base/common/platform';
 
-import * as paths from 'vs/base/common/paths';
-import URI from 'vs/base/common/uri';
-import { TPromise, TValueCallback } from 'vs/base/common/winjs.base';
+export type ValueCallback<T = any> = (value: T | Promise<T>) => void;
 
-export class DeferredTPromise<T> extends TPromise<T> {
+export class DeferredPromise<T> {
 
-	public canceled: boolean;
+	private completeCallback!: ValueCallback<T>;
+	private errorCallback!: (err: any) => void;
 
-	private completeCallback: TValueCallback<T>;
-	private errorCallback: (err: any) => void;
+	public p: Promise<any>;
 
-	constructor(oncancel?: any) {
-		let captured: any;
-		super((c, e) => {
-			captured = { c, e };
-		}, oncancel ? oncancel : () => this.oncancel);
-		this.canceled = false;
-		this.completeCallback = captured.c;
-		this.errorCallback = captured.e;
+	constructor() {
+		this.p = new Promise<any>((c, e) => {
+			this.completeCallback = c;
+			this.errorCallback = e;
+		});
 	}
 
 	public complete(value: T) {
-		this.completeCallback(value);
+		return new Promise(resolve => {
+			this.completeCallback(value);
+			resolve();
+		});
 	}
 
 	public error(err: any) {
-		this.errorCallback(err);
+		return new Promise(resolve => {
+			this.errorCallback(err);
+			resolve();
+		});
 	}
 
-	private oncancel(): void {
-		this.canceled = true;
+	public cancel() {
+		new Promise(resolve => {
+			this.errorCallback(canceled());
+			resolve();
+		});
 	}
 }
 
 export function toResource(this: any, path: string) {
-	return URI.file(paths.join('C:\\', Buffer.from(this.test.fullTitle()).toString('base64'), path));
+	if (isWindows) {
+		return URI.file(join('C:\\', btoa(this.test.fullTitle()), path));
+	}
+
+	return URI.file(join('/', btoa(this.test.fullTitle()), path));
 }
 
 export function suiteRepeat(n: number, description: string, callback: (this: any) => void): void {

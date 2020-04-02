@@ -1,0 +1,20 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the Source EULA. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.labelOnTopContainer {
+	display: flex;
+	flex-direction: column;
+}
+
+.labelOnLeftContainer {
+	display: flex;
+	flex-direction: row;
+	margin-right: 5px;
+}
+
+.monaco-select-box {
+	padding: 2px 8px;
+	padding: 0 22px 0 6px !important; /* I don't like this but for now its fine */
+}

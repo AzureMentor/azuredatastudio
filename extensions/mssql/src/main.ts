@@ -2,168 +2,225 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as vscode from 'vscode';
+import * as azdata from 'azdata';
 import * as path from 'path';
-import { SqlOpsDataClient, ClientOptions } from 'dataprotocol-client';
-import { IConfig, ServerProvider, Events } from 'service-downloader';
-import { ServerOptions, TransportKind } from 'vscode-languageclient';
+import * as os from 'os';
 
 import * as Constants from './constants';
 import ContextProvider from './contextProvider';
-import { CredentialStore } from './credentialstore/credentialstore';
-import { AzureResourceProvider } from './resourceProvider/resourceProvider';
 import * as Utils from './utils';
-import { Telemetry, LanguageClientErrorHandler } from './telemetry';
-import { TelemetryFeature, AgentServicesFeature } from './features';
+import { AppContext } from './appContext';
+import { ApiWrapper } from './apiWrapper';
+import { UploadFilesCommand, MkDirCommand, SaveFileCommand, PreviewFileCommand, CopyPathCommand, DeleteFilesCommand, ManageAccessCommand } from './objectExplorerNodeProvider/hdfsCommands';
+import { IPrompter } from './prompts/question';
+import CodeAdapter from './prompts/adapter';
+import { IExtension } from './mssql';
+import { OpenSparkJobSubmissionDialogCommand, OpenSparkJobSubmissionDialogFromFileCommand, OpenSparkJobSubmissionDialogTask } from './sparkFeature/dialog/dialogCommands';
+import { OpenSparkYarnHistoryTask } from './sparkFeature/historyTask';
+import { MssqlObjectExplorerNodeProvider, mssqlOutputChannel } from './objectExplorerNodeProvider/objectExplorerNodeProvider';
+import { registerSearchServerCommand } from './objectExplorerNodeProvider/command';
+import { MssqlIconProvider } from './iconProvider';
+import { registerServiceEndpoints, Endpoint } from './dashboard/serviceEndpoints';
+import { getBookExtensionContributions } from './dashboard/bookExtensions';
+import { registerBooksWidget } from './dashboard/bookWidget';
+import { createMssqlApi } from './mssqlApiFactory';
+import { AuthType } from './util/auth';
+import { SqlToolsServer } from './sqlToolsServer';
+import { promises as fs } from 'fs';
+import { IconPathHelper } from './iconHelper';
+import * as nls from 'vscode-nls';
 
-const baseConfig = require('./config.json');
-const outputChannel = vscode.window.createOutputChannel(Constants.serviceName);
-const statusView = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+const localize = nls.loadMessageBundle();
+const msgSampleCodeDataFrame = localize('msgSampleCodeDataFrame', "This sample code loads the file into a data frame and shows the first 10 results.");
 
-export async function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<IExtension> {
 	// lets make sure we support this platform first
 	let supported = await Utils.verifyPlatform();
 
 	if (!supported) {
 		vscode.window.showErrorMessage('Unsupported platform');
+		return undefined;
+	}
+
+	// ensure our log path exists
+	if (!(await Utils.exists(context.logPath))) {
+		await fs.mkdir(context.logPath);
+	}
+
+	IconPathHelper.setExtensionContext(context);
+
+	let prompter: IPrompter = new CodeAdapter();
+	let appContext = new AppContext(context, new ApiWrapper());
+
+	let nodeProvider = new MssqlObjectExplorerNodeProvider(prompter, appContext);
+	azdata.dataprotocol.registerObjectExplorerNodeProvider(nodeProvider);
+	let iconProvider = new MssqlIconProvider();
+	azdata.dataprotocol.registerIconProvider(iconProvider);
+
+	activateSparkFeatures(appContext);
+	activateNotebookTask(appContext);
+
+	registerSearchServerCommand(appContext);
+	context.subscriptions.push(new ContextProvider());
+	registerHdfsCommands(context, prompter, appContext);
+
+	registerLogCommand(context);
+
+	registerServiceEndpoints(context);
+	// Get book contributions - in the future this will be integrated with the Books/Notebook widget to show as a dashboard widget
+	const bookContributionProvider = getBookExtensionContributions(context);
+	context.subscriptions.push(bookContributionProvider);
+
+	registerBooksWidget(bookContributionProvider);
+
+	// initialize client last so we don't have features stuck behind it
+	const server = new SqlToolsServer();
+	context.subscriptions.push(server);
+	await server.start(appContext);
+
+	return createMssqlApi(appContext);
+}
+
+const logFiles = ['resourceprovider.log', 'sqltools.log', 'credentialstore.log'];
+function registerLogCommand(context: vscode.ExtensionContext) {
+	context.subscriptions.push(vscode.commands.registerCommand('mssql.showLogFile', async () => {
+		const choice = await vscode.window.showQuickPick(logFiles);
+		if (choice) {
+			const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(context.logPath, choice)));
+			if (document) {
+				vscode.window.showTextDocument(document);
+			}
+		}
+	}));
+}
+
+function registerHdfsCommands(context: vscode.ExtensionContext, prompter: IPrompter, appContext: AppContext) {
+	context.subscriptions.push(new UploadFilesCommand(prompter, appContext));
+	context.subscriptions.push(new MkDirCommand(prompter, appContext));
+	context.subscriptions.push(new SaveFileCommand(prompter, appContext));
+	context.subscriptions.push(new PreviewFileCommand(prompter, appContext));
+	context.subscriptions.push(new CopyPathCommand(appContext));
+	context.subscriptions.push(new DeleteFilesCommand(prompter, appContext));
+	context.subscriptions.push(new ManageAccessCommand(appContext));
+}
+
+function activateSparkFeatures(appContext: AppContext): void {
+	let extensionContext = appContext.extensionContext;
+	let apiWrapper = appContext.apiWrapper;
+	let outputChannel: vscode.OutputChannel = mssqlOutputChannel;
+	extensionContext.subscriptions.push(new OpenSparkJobSubmissionDialogCommand(appContext, outputChannel));
+	extensionContext.subscriptions.push(new OpenSparkJobSubmissionDialogFromFileCommand(appContext, outputChannel));
+	apiWrapper.registerTaskHandler(Constants.mssqlClusterLivySubmitSparkJobTask, async (profile: azdata.IConnectionProfile) => {
+		await new OpenSparkJobSubmissionDialogTask(appContext, outputChannel).execute(profile);
+	});
+	apiWrapper.registerTaskHandler(Constants.mssqlClusterLivyOpenSparkHistory, async (profile: azdata.IConnectionProfile) => {
+		await new OpenSparkYarnHistoryTask(appContext).execute(profile, true);
+	});
+	apiWrapper.registerTaskHandler(Constants.mssqlClusterLivyOpenYarnHistory, async (profile: azdata.IConnectionProfile) => {
+		await new OpenSparkYarnHistoryTask(appContext).execute(profile, false);
+	});
+}
+
+function activateNotebookTask(appContext: AppContext): void {
+	let apiWrapper = appContext.apiWrapper;
+	apiWrapper.registerTaskHandler(Constants.mssqlClusterNewNotebookTask, (profile: azdata.IConnectionProfile) => {
+		return saveProfileAndCreateNotebook(profile);
+	});
+	apiWrapper.registerTaskHandler(Constants.mssqlClusterOpenNotebookTask, (profile: azdata.IConnectionProfile) => {
+		return handleOpenNotebookTask(profile);
+	});
+	apiWrapper.registerTaskHandler(Constants.mssqlOpenClusterDashboard, (profile: azdata.IConnectionProfile) => {
+		return handleOpenClusterDashboardTask(profile, appContext);
+	});
+}
+
+function saveProfileAndCreateNotebook(profile: azdata.IConnectionProfile): Promise<void> {
+	return handleNewNotebookTask(undefined, profile);
+}
+
+function findNextUntitledEditorName(): string {
+	let nextVal = 0;
+	// Note: this will go forever if it's coded wrong, or you have inifinite Untitled notebooks!
+	while (true) {
+		let title = `Notebook-${nextVal}`;
+		let hasNotebookDoc = azdata.nb.notebookDocuments.findIndex(doc => doc.isUntitled && doc.fileName === title) > -1;
+		if (!hasNotebookDoc) {
+			return title;
+		}
+		nextVal++;
+	}
+}
+
+async function handleNewNotebookTask(oeContext?: azdata.ObjectExplorerContext, profile?: azdata.IConnectionProfile): Promise<void> {
+	// Ensure we get a unique ID for the notebook. For now we're using a different prefix to the built-in untitled files
+	// to handle this. We should look into improving this in the future
+	let title = findNextUntitledEditorName();
+	let untitledUri = vscode.Uri.parse(`untitled:${title}`);
+	let editor = await azdata.nb.showNotebookDocument(untitledUri, {
+		connectionProfile: profile,
+		preview: false
+	});
+	if (oeContext && oeContext.nodeInfo && oeContext.nodeInfo.nodePath) {
+		// Get the file path after '/HDFS'
+		let hdfsPath: string = oeContext.nodeInfo.nodePath.substring(oeContext.nodeInfo.nodePath.indexOf('/HDFS') + '/HDFS'.length);
+		if (hdfsPath.length > 0) {
+			let analyzeCommand = '#' + msgSampleCodeDataFrame + os.EOL + 'df = (spark.read.option("inferSchema", "true")'
+				+ os.EOL + '.option("header", "true")' + os.EOL + '.csv("{0}"))' + os.EOL + 'df.show(10)';
+			editor.edit(editBuilder => {
+				editBuilder.replace(0, {
+					cell_type: 'code',
+					source: analyzeCommand.replace('{0}', hdfsPath)
+				});
+			});
+
+		}
+	}
+}
+
+async function handleOpenNotebookTask(profile: azdata.IConnectionProfile): Promise<void> {
+	let notebookFileTypeName = localize('notebookFileType', "Notebooks");
+	let filter: { [key: string]: string[] } = {};
+	filter[notebookFileTypeName] = ['ipynb'];
+	let uris = await vscode.window.showOpenDialog({
+		filters: filter,
+		canSelectFiles: true,
+		canSelectMany: false
+	});
+	if (uris && uris.length > 0) {
+		let fileUri = uris[0];
+		// Verify this is a .ipynb file since this isn't actually filtered on Mac/Linux
+		if (path.extname(fileUri.fsPath) !== '.ipynb') {
+			// in the future might want additional supported types
+			vscode.window.showErrorMessage(localize('unsupportedFileType', "Only .ipynb Notebooks are supported"));
+		} else {
+			await azdata.nb.showNotebookDocument(fileUri, {
+				connectionProfile: profile,
+				preview: false
+			});
+		}
+	}
+}
+
+async function handleOpenClusterDashboardTask(profile: azdata.IConnectionProfile, appContext: AppContext): Promise<void> {
+	const serverInfo = await azdata.connection.getServerInfo(profile.id);
+	const controller = Utils.getClusterEndpoints(serverInfo).find(e => e.serviceName === Endpoint.controller);
+	if (!controller) {
+		appContext.apiWrapper.showErrorMessage(localize('noController', "Could not find the controller endpoint for this instance"));
 		return;
 	}
 
-	let config: IConfig = JSON.parse(JSON.stringify(baseConfig));
-	config.installDirectory = path.join(__dirname, config.installDirectory);
-	config.proxy = vscode.workspace.getConfiguration('http').get('proxy');
-	config.strictSSL = vscode.workspace.getConfiguration('http').get('proxyStrictSSL') || true;
-
-	const credentialsStore = new CredentialStore(config);
-	const resourceProvider = new AzureResourceProvider(config);
-	let languageClient: SqlOpsDataClient;
-
-	const serverdownloader = new ServerProvider(config);
-
-	serverdownloader.eventEmitter.onAny(generateHandleServerProviderEvent());
-
-	let clientOptions: ClientOptions = {
-		documentSelector: ['sql'],
-		synchronize: {
-			configurationSection: Constants.extensionConfigSectionName
-		},
-		providerId: Constants.providerId,
-		errorHandler: new LanguageClientErrorHandler(),
-		features: [
-			// we only want to add new features
-			...SqlOpsDataClient.defaultFeatures,
-			TelemetryFeature,
-			AgentServicesFeature
-		],
-		outputChannel: new CustomOutputChannel()
-	};
-
-	const installationStart = Date.now();
-	serverdownloader.getOrDownloadServer().then(e => {
-		const installationComplete = Date.now();
-		let serverOptions = generateServerOptions(e);
-		languageClient = new SqlOpsDataClient(Constants.serviceName, serverOptions, clientOptions);
-		const processStart = Date.now();
-		languageClient.onReady().then(() => {
-			const processEnd = Date.now();
-			statusView.text = 'Service Started';
-			setTimeout(() => {
-				statusView.hide();
-			}, 1500);
-			Telemetry.sendTelemetryEvent('startup/LanguageClientStarted', {
-				installationTime: String(installationComplete - installationStart),
-				processStartupTime: String(processEnd - processStart),
-				totalTime: String(processEnd - installationStart),
-				beginningTimestamp: String(installationStart)
-			});
-		});
-		statusView.show();
-		statusView.text = 'Starting service';
-		languageClient.start();
-		credentialsStore.start();
-		resourceProvider.start();
-	}, e => {
-		Telemetry.sendTelemetryEvent('ServiceInitializingFailed');
-		vscode.window.showErrorMessage('Failed to start Sql tools service');
-	});
-
-	let contextProvider = new ContextProvider();
-	context.subscriptions.push(contextProvider);
-	context.subscriptions.push(credentialsStore);
-	context.subscriptions.push(resourceProvider);
-	context.subscriptions.push({ dispose: () => languageClient.stop() });
-}
-
-function generateServerOptions(executablePath: string): ServerOptions {
-	let launchArgs = [];
-	launchArgs.push('--log-dir');
-	let logFileLocation = path.join(Utils.getDefaultLogLocation(), 'mssql');
-	launchArgs.push(logFileLocation);
-	let config = vscode.workspace.getConfiguration(Constants.extensionConfigSectionName);
-	if (config) {
-		let logDebugInfo = config[Constants.configLogDebugInfo];
-		if (logDebugInfo) {
-			launchArgs.push('--enable-logging');
-		}
-	}
-
-	return { command: executablePath, args: launchArgs, transport: TransportKind.stdio };
-}
-
-function generateHandleServerProviderEvent() {
-	let dots = 0;
-	return (e: string, ...args: any[]) => {
-		outputChannel.show();
-		statusView.show();
-		switch (e) {
-			case Events.INSTALL_START:
-				outputChannel.appendLine(`Installing ${Constants.serviceName} service to ${args[0]}`);
-				statusView.text = 'Installing Service';
-				break;
-			case Events.INSTALL_END:
-				outputChannel.appendLine('Installed');
-				break;
-			case Events.DOWNLOAD_START:
-				outputChannel.appendLine(`Downloading ${args[0]}`);
-				outputChannel.append(`(${Math.ceil(args[1] / 1024)} KB)`);
-				statusView.text = 'Downloading Service';
-				break;
-			case Events.DOWNLOAD_PROGRESS:
-				let newDots = Math.ceil(args[0] / 5);
-				if (newDots > dots) {
-					outputChannel.append('.'.repeat(newDots - dots));
-					dots = newDots;
-				}
-				break;
-			case Events.DOWNLOAD_END:
-				outputChannel.appendLine('Done!');
-				break;
-		}
-	};
+	appContext.apiWrapper.executeCommand('bigDataClusters.command.manageController',
+		{
+			url: controller.endpoint,
+			auth: profile.authenticationType === 'Integrated' ? AuthType.Integrated : AuthType.Basic,
+			username: 'admin', // Default to admin as a best-guess, we'll prompt for re-entering credentials if that fails
+			password: profile.password,
+			rememberPassword: true
+		}, /*addOrUpdateController*/true);
 }
 
 // this method is called when your extension is deactivated
 export function deactivate(): void {
-}
-
-class CustomOutputChannel implements vscode.OutputChannel {
-	name: string;
-	append(value: string): void {
-		console.log(value);
-	}
-	appendLine(value: string): void {
-		console.log(value);
-	}
-	clear(): void {
-	}
-	show(preserveFocus?: boolean): void;
-	show(column?: vscode.ViewColumn, preserveFocus?: boolean): void;
-	show(column?: any, preserveFocus?: any) {
-	}
-	hide(): void {
-	}
-	dispose(): void {
-	}
 }

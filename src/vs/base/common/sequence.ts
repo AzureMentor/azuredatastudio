@@ -3,8 +3,6 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import { Event, Emitter } from 'vs/base/common/event';
 
 export interface ISplice<T> {
@@ -26,7 +24,7 @@ export class Sequence<T> implements ISequence<T>, ISpliceable<T> {
 
 	readonly elements: T[] = [];
 
-	private _onDidSplice = new Emitter<ISplice<T>>();
+	private readonly _onDidSplice = new Emitter<ISplice<T>>();
 	readonly onDidSplice: Event<ISplice<T>> = this._onDidSplice.event;
 
 	splice(start: number, deleteCount: number, toInsert: T[] = []): void {

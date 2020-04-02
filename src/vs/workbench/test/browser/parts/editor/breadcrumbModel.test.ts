@@ -3,20 +3,18 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import * as assert from 'assert';
-import URI from 'vs/base/common/uri';
+import { URI } from 'vs/base/common/uri';
 import { Workspace, WorkspaceFolder } from 'vs/platform/workspace/common/workspace';
 import { EditorBreadcrumbsModel, FileElement } from 'vs/workbench/browser/parts/editor/breadcrumbsModel';
-import { TestContextService } from 'vs/workbench/test/workbenchTestServices';
 import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
 import { FileKind } from 'vs/platform/files/common/files';
+import { TestContextService } from 'vs/workbench/test/common/workbenchTestServices';
 
 
 suite('Breadcrumb Model', function () {
 
-	const workspaceService = new TestContextService(new Workspace('ffff', 'Test', [new WorkspaceFolder({ uri: URI.parse('foo:/bar/baz/ws'), name: 'ws', index: 0 })]));
+	const workspaceService = new TestContextService(new Workspace('ffff', [new WorkspaceFolder({ uri: URI.parse('foo:/bar/baz/ws'), name: 'ws', index: 0 })]));
 	const configService = new class extends TestConfigurationService {
 		getValue(...args: any[]) {
 			if (args[0] === 'breadcrumbs.filePath') {
@@ -27,11 +25,14 @@ suite('Breadcrumb Model', function () {
 			}
 			return super.getValue(...args);
 		}
+		updateValue() {
+			return Promise.resolve();
+		}
 	};
 
 	test('only uri, inside workspace', function () {
 
-		let model = new EditorBreadcrumbsModel(URI.parse('foo:/bar/baz/ws/some/path/file.ts'), undefined, workspaceService, configService);
+		let model = new EditorBreadcrumbsModel(URI.parse('foo:/bar/baz/ws/some/path/file.ts'), undefined, configService, configService, workspaceService);
 		let elements = model.getElements();
 
 		assert.equal(elements.length, 3);
@@ -46,7 +47,7 @@ suite('Breadcrumb Model', function () {
 
 	test('only uri, outside workspace', function () {
 
-		let model = new EditorBreadcrumbsModel(URI.parse('foo:/outside/file.ts'), undefined, workspaceService, configService);
+		let model = new EditorBreadcrumbsModel(URI.parse('foo:/outside/file.ts'), undefined, configService, configService, workspaceService);
 		let elements = model.getElements();
 
 		assert.equal(elements.length, 2);

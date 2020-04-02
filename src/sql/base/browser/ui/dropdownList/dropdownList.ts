@@ -3,11 +3,9 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-import 'vs/css!sql/base/browser/ui/dropdownList/media/dropdownList';
+import 'vs/css!./media/dropdownList';
 import * as DOM from 'vs/base/browser/dom';
 import { Dropdown, IDropdownOptions } from 'vs/base/browser/ui/dropdown/dropdown';
-import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { Color } from 'vs/base/common/color';
 import { IAction } from 'vs/base/common/actions';
@@ -15,10 +13,9 @@ import { EventType as GestureEventType } from 'vs/base/browser/touch';
 import { List } from 'vs/base/browser/ui/list/listWidget';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode } from 'vs/base/common/keyCodes';
-import { Builder } from 'vs/base/browser/builder';
 
-import { Button } from 'sql/base/browser/ui/button/button';
-import { attachButtonStyler } from 'sql/common/theme/styler';
+import { Button, IButtonStyles } from 'sql/base/browser/ui/button/button';
+import { onUnexpectedError } from 'vs/base/common/errors';
 
 export interface IDropdownStyles {
 	backgroundColor?: Color;
@@ -28,51 +25,49 @@ export interface IDropdownStyles {
 
 export class DropdownList extends Dropdown {
 
-	protected backgroundColor: Color;
-	protected foregroundColor: Color;
-	protected borderColor: Color;
+	protected backgroundColor?: Color;
+	protected foregroundColor?: Color;
+	protected borderColor?: Color;
+
+	private button?: Button;
 
 	constructor(
 		container: HTMLElement,
 		private _options: IDropdownOptions,
 		private _contentContainer: HTMLElement,
 		private _list: List<any>,
-		private _themeService: IThemeService,
-		private _action?: IAction,
+		action?: IAction,
 	) {
 		super(container, _options);
-		if (_action) {
-			let button = new Button(_contentContainer);
-			button.label = _action.label;
-			this.toDispose.push(DOM.addDisposableListener(button.element, DOM.EventType.CLICK, () => {
-				this._action.run();
+		if (action) {
+			this.button = new Button(_contentContainer);
+			this.button.label = action.label;
+			this._register(DOM.addDisposableListener(this.button.element, DOM.EventType.CLICK, () => {
+				action.run().catch(e => onUnexpectedError(e));
 				this.hide();
 			}));
-			this.toDispose.push(DOM.addDisposableListener(button.element, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			this._register(DOM.addDisposableListener(this.button.element, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 				let event = new StandardKeyboardEvent(e);
 				if (event.equals(KeyCode.Enter)) {
 					e.stopPropagation();
-					this._action.run();
+					action.run().catch(e => onUnexpectedError(e));
 					this.hide();
 				}
 			}));
-			attachButtonStyler(button, this._themeService);
 		}
 
 		DOM.append(this.element, DOM.$('div.dropdown-icon'));
 
-		this.toDispose.push(new Builder(this.element).on([DOM.EventType.CLICK, DOM.EventType.MOUSE_DOWN, GestureEventType.Tap], (e: Event) => {
-			DOM.EventHelper.stop(e, true); // prevent default click behaviour to trigger
-		}).on([DOM.EventType.MOUSE_DOWN, GestureEventType.Tap], (e: Event) => {
-			// We want to show the context menu on dropdown so that as a user you can press and hold the
-			// mouse button, make a choice of action in the menu and release the mouse to trigger that
-			// action.
-			// Due to some weird bugs though, we delay showing the menu to unwind event stack
-			// (see https://github.com/Microsoft/vscode/issues/27648)
-			setTimeout(() => this.show(), 100);
-		}).on([DOM.EventType.KEY_DOWN], (e: KeyboardEvent) => {
-			let event = new StandardKeyboardEvent(e);
-			if (event.equals(KeyCode.Enter)) {
+		[DOM.EventType.CLICK, DOM.EventType.MOUSE_DOWN, GestureEventType.Tap].forEach(event => {
+			this._register(DOM.addDisposableListener(this.element, event, e => DOM.EventHelper.stop(e, true))); // prevent default click behaviour to trigger
+		});
+
+		[DOM.EventType.MOUSE_DOWN, GestureEventType.Tap].forEach(event => {
+			this._register(DOM.addDisposableListener(this.element, event, e => setTimeout(() => this.show(), 100)));
+		});
+
+		this._register(DOM.addStandardDisposableListener(this.element, DOM.EventType.KEY_DOWN, (e: StandardKeyboardEvent) => {
+			if (e.equals(KeyCode.Enter)) {
 				e.stopPropagation();
 				setTimeout(() => {
 					this.show();
@@ -81,7 +76,7 @@ export class DropdownList extends Dropdown {
 			}
 		}));
 
-		this.toDispose.push(this._list.onSelectionChange(() => {
+		this._register(this._list.onDidChangeSelection(() => {
 			// focus on the dropdown label then hide the dropdown list
 			this.element.focus();
 			this.hide();
@@ -96,14 +91,14 @@ export class DropdownList extends Dropdown {
 	protected renderContents(container: HTMLElement): IDisposable {
 		let div = DOM.append(container, this._contentContainer);
 		div.style.width = DOM.getTotalWidth(this.element) + 'px';
-		return null;
+		return { dispose: () => { } };
 	}
 
 	/**
 	 * Render the selected label of the dropdown
 	 */
 	public renderLabel(): void {
-		if (this._options.labelRenderer) {
+		if (this._options.labelRenderer && this.label) {
 			this._options.labelRenderer(this.label);
 		}
 	}
@@ -126,17 +121,20 @@ export class DropdownList extends Dropdown {
 		}
 	}
 
-	public style(styles: IDropdownStyles): void {
+	public style(styles: IDropdownStyles & IButtonStyles): void {
 		this.backgroundColor = styles.backgroundColor;
 		this.foregroundColor = styles.foregroundColor;
 		this.borderColor = styles.borderColor;
 		this.applyStyles();
+		if (this.button) {
+			this.button.style(styles);
+		}
 	}
 
 	protected applyStyles(): void {
-		const background = this.backgroundColor ? this.backgroundColor.toString() : null;
-		const foreground = this.foregroundColor ? this.foregroundColor.toString() : null;
-		const border = this.borderColor ? this.borderColor.toString() : null;
+		const background = this.backgroundColor ? this.backgroundColor.toString() : '';
+		const foreground = this.foregroundColor ? this.foregroundColor.toString() : '';
+		const border = this.borderColor ? this.borderColor.toString() : '';
 		this.applyStylesOnElement(this._contentContainer, background, foreground, border);
 		if (this.label) {
 			this.applyStylesOnElement(this.element, background, foreground, border);
@@ -148,8 +146,8 @@ export class DropdownList extends Dropdown {
 			element.style.backgroundColor = background;
 			element.style.color = foreground;
 
-			element.style.borderWidth = border ? '1px' : null;
-			element.style.borderStyle = border ? 'solid' : null;
+			element.style.borderWidth = border ? '1px' : '';
+			element.style.borderStyle = border ? 'solid' : '';
 			element.style.borderColor = border;
 		}
 	}

@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as assert from 'assert';
 import { Position } from 'vs/editor/common/core/position';
@@ -76,7 +75,7 @@ suite('Find', () => {
 			let searchStringSelectionTwoLines = getSelectionSearchString(editor);
 			assert.equal(searchStringSelectionTwoLines, null);
 
-			// Select end of first line newline and and chunk of second
+			// Select end of first line newline and chunk of second
 			editor.setSelection(new Range(1, 7, 2, 4));
 			let searchStringSelectionSpanLines = getSelectionSearchString(editor);
 			assert.equal(searchStringSelectionSpanLines, null);

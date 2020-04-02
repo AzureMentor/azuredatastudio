@@ -2,14 +2,13 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
-import { TextAreaInput, ITextAreaInputHost } from 'vs/editor/browser/controller/textAreaInput';
-import { ISimpleModel, TextAreaState, PagedScreenReaderStrategy } from 'vs/editor/browser/controller/textAreaState';
-import { Range, IRange } from 'vs/editor/common/core/range';
-import { Position } from 'vs/editor/common/core/position';
-import { createFastDomNode } from 'vs/base/browser/fastDomNode';
 import * as browser from 'vs/base/browser/browser';
+import { createFastDomNode } from 'vs/base/browser/fastDomNode';
+import { ITextAreaInputHost, TextAreaInput } from 'vs/editor/browser/controller/textAreaInput';
+import { ISimpleModel, PagedScreenReaderStrategy, TextAreaState } from 'vs/editor/browser/controller/textAreaState';
+import { Position } from 'vs/editor/common/core/position';
+import { IRange, Range } from 'vs/editor/common/core/range';
 import { EndOfLinePreference } from 'vs/editor/common/model';
 
 // To run this test, open imeTester.html
@@ -45,7 +44,7 @@ class SingleLineTestModel implements ISimpleModel {
 
 class TestView {
 
-	private _model: SingleLineTestModel;
+	private readonly _model: SingleLineTestModel;
 
 	constructor(model: SingleLineTestModel) {
 		this._model = model;
@@ -87,8 +86,15 @@ function doCreateTest(description: string, inputStr: string, expectedStr: string
 	let model = new SingleLineTestModel('some  text');
 
 	const textAreaInputHost: ITextAreaInputHost = {
-		getPlainTextToCopy: (): string => '',
-		getHTMLToCopy: (): string => '',
+		getDataToCopy: () => {
+			return {
+				isFromEmptySelection: false,
+				multicursorText: null,
+				text: '',
+				html: undefined,
+				mode: null
+			};
+		},
 		getScreenReaderContent: (currentState: TextAreaState): TextAreaState => {
 
 			if (browser.isIPad) {
@@ -98,10 +104,10 @@ function doCreateTest(description: string, inputStr: string, expectedStr: string
 
 			const selection = new Range(1, 1 + cursorOffset, 1, 1 + cursorOffset + cursorLength);
 
-			return PagedScreenReaderStrategy.fromEditorSelection(currentState, model, selection, true);
+			return PagedScreenReaderStrategy.fromEditorSelection(currentState, model, selection, 10, true);
 		},
 		deduceModelPosition: (viewAnchorPosition: Position, deltaOffset: number, lineFeedCnt: number): Position => {
-			return null;
+			return null!;
 		}
 	};
 

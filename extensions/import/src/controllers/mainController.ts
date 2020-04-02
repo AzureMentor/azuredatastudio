@@ -3,10 +3,8 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import * as constants from '../constants';
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 import ControllerBase from './controllerBase';
 import * as vscode from 'vscode';
 import { FlatFileWizard } from '../wizard/flatFileWizard';
@@ -39,6 +37,6 @@ export default class MainController extends ControllerBase {
 	}
 
 	private initializeFlatFileProvider(provider: FlatFileProvider) {
-		sqlops.tasks.registerTask('flatFileImport.start', (profile: sqlops.IConnectionProfile, ...args: any[]) => new FlatFileWizard(provider).start(profile, args));
+		azdata.tasks.registerTask('flatFileImport.start', (profile: azdata.IConnectionProfile, ...args: any[]) => new FlatFileWizard(provider).start(profile, args));
 	}
 }

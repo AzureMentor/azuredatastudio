@@ -25,7 +25,10 @@ function code() {
 	test -d node_modules || ./scripts/npm.sh install
 
 	# Get electron
-	(test -f "$CODE" && [ $INTENDED_VERSION == $INSTALLED_VERSION ]) || ./node_modules/.bin/gulp electron
+	yarn electron
+
+	# Sync built-in extensions
+	node build/lib/builtInExtensions.js
 
 	# Build
 	test -d out || ./node_modules/.bin/gulp compile

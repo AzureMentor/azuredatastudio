@@ -15,10 +15,17 @@ export interface TocEntry {
 	readonly location: vscode.Location;
 }
 
+export interface SkinnyTextLine {
+	text: string;
+}
+
 export interface SkinnyTextDocument {
 	readonly uri: vscode.Uri;
+	readonly version: number;
+	readonly lineCount: number;
+
+	lineAt(line: number): SkinnyTextLine;
 	getText(): string;
-	lineAt(line: number): vscode.TextLine;
 }
 
 export class TableOfContentsProvider {
@@ -48,20 +55,51 @@ export class TableOfContentsProvider {
 
 	private async buildToc(document: SkinnyTextDocument): Promise<TocEntry[]> {
 		const toc: TocEntry[] = [];
-		const tokens = await this.engine.parse(document.uri, document.getText());
+		const tokens = await this.engine.parse(document);
+
+		const slugCount = new Map<string, number>();
 
 		for (const heading of tokens.filter(token => token.type === 'heading_open')) {
 			const lineNumber = heading.map[0];
 			const line = document.lineAt(lineNumber);
+
+			let slug = githubSlugifier.fromHeading(line.text);
+			if (slugCount.has(slug.value)) {
+				const count = slugCount.get(slug.value)!;
+				slugCount.set(slug.value, count + 1);
+				slug = githubSlugifier.fromHeading(slug.value + '-' + (count + 1));
+			} else {
+				slugCount.set(slug.value, 0);
+			}
+
 			toc.push({
-				slug: githubSlugifier.fromHeading(line.text),
+				slug,
 				text: TableOfContentsProvider.getHeaderText(line.text),
 				level: TableOfContentsProvider.getHeaderLevel(heading.markup),
 				line: lineNumber,
-				location: new vscode.Location(document.uri, line.range)
+				location: new vscode.Location(document.uri,
+					new vscode.Range(lineNumber, 0, lineNumber, line.text.length))
 			});
 		}
-		return toc;
+
+		// Get full range of section
+		return toc.map((entry, startIndex): TocEntry => {
+			let end: number | undefined = undefined;
+			for (let i = startIndex + 1; i < toc.length; ++i) {
+				if (toc[i].level <= entry.level) {
+					end = toc[i].line - 1;
+					break;
+				}
+			}
+			const endLine = end !== undefined ? end : document.lineCount - 1;
+			return {
+				...entry,
+				location: new vscode.Location(document.uri,
+					new vscode.Range(
+						entry.location.range.start,
+						new vscode.Position(endLine, document.lineAt(endLine).text.length)))
+			};
+		});
 	}
 
 	private static getHeaderLevel(markup: string): number {

@@ -2,63 +2,67 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
+import * as errors from 'vs/base/common/errors';
+import { Disposable, IDisposable, toDisposable } from 'vs/base/common/lifecycle';
+import { ScrollEvent } from 'vs/base/common/scrollable';
+import { ConfigurationChangedEvent, EditorOption } from 'vs/editor/common/config/editorOptions';
 import { Range } from 'vs/editor/common/core/range';
 import { Selection } from 'vs/editor/common/core/selection';
-import { ScrollEvent } from 'vs/base/common/scrollable';
-import { IConfigurationChangedEvent } from 'vs/editor/common/config/editorOptions';
-import * as errors from 'vs/base/common/errors';
-import { IDisposable, Disposable, toDisposable } from 'vs/base/common/lifecycle';
-import { ScrollType } from 'vs/editor/common/editorCommon';
+import { ScrollType, IContentSizeChangedEvent } from 'vs/editor/common/editorCommon';
+import { IModelDecorationsChangedEvent } from 'vs/editor/common/model/textModelEvents';
 
 export const enum ViewEventType {
 	ViewConfigurationChanged = 1,
-	ViewCursorStateChanged = 2,
-	ViewDecorationsChanged = 3,
-	ViewFlushed = 4,
-	ViewFocusChanged = 5,
-	ViewLineMappingChanged = 6,
-	ViewLinesChanged = 7,
-	ViewLinesDeleted = 8,
-	ViewLinesInserted = 9,
-	ViewRevealRangeRequest = 10,
-	ViewScrollChanged = 11,
-	ViewTokensChanged = 12,
-	ViewTokensColorsChanged = 13,
-	ViewZonesChanged = 14,
-	ViewThemeChanged = 15,
-	ViewLanguageConfigurationChanged = 16
+	ViewContentSizeChanged = 2,
+	ViewCursorStateChanged = 3,
+	ViewDecorationsChanged = 4,
+	ViewFlushed = 5,
+	ViewFocusChanged = 6,
+	ViewLanguageConfigurationChanged = 7,
+	ViewLineMappingChanged = 8,
+	ViewLinesChanged = 9,
+	ViewLinesDeleted = 10,
+	ViewLinesInserted = 11,
+	ViewRevealRangeRequest = 12,
+	ViewScrollChanged = 13,
+	ViewThemeChanged = 14,
+	ViewTokensChanged = 15,
+	ViewTokensColorsChanged = 16,
+	ViewZonesChanged = 17,
 }
 
 export class ViewConfigurationChangedEvent {
 
 	public readonly type = ViewEventType.ViewConfigurationChanged;
 
-	public readonly canUseLayerHinting: boolean;
-	public readonly pixelRatio: boolean;
-	public readonly editorClassName: boolean;
-	public readonly lineHeight: boolean;
-	public readonly readOnly: boolean;
-	public readonly accessibilitySupport: boolean;
-	public readonly emptySelectionClipboard: boolean;
-	public readonly layoutInfo: boolean;
-	public readonly fontInfo: boolean;
-	public readonly viewInfo: boolean;
-	public readonly wrappingInfo: boolean;
+	public readonly _source: ConfigurationChangedEvent;
 
-	constructor(source: IConfigurationChangedEvent) {
-		this.canUseLayerHinting = source.canUseLayerHinting;
-		this.pixelRatio = source.pixelRatio;
-		this.editorClassName = source.editorClassName;
-		this.lineHeight = source.lineHeight;
-		this.readOnly = source.readOnly;
-		this.accessibilitySupport = source.accessibilitySupport;
-		this.emptySelectionClipboard = source.emptySelectionClipboard;
-		this.layoutInfo = source.layoutInfo;
-		this.fontInfo = source.fontInfo;
-		this.viewInfo = source.viewInfo;
-		this.wrappingInfo = source.wrappingInfo;
+	constructor(source: ConfigurationChangedEvent) {
+		this._source = source;
+	}
+
+	public hasChanged(id: EditorOption): boolean {
+		return this._source.hasChanged(id);
+	}
+}
+
+export class ViewContentSizeChangedEvent implements IContentSizeChangedEvent {
+
+	public readonly type = ViewEventType.ViewContentSizeChanged;
+
+	public readonly contentWidth: number;
+	public readonly contentHeight: number;
+
+	public readonly contentWidthChanged: boolean;
+	public readonly contentHeightChanged: boolean;
+
+	constructor(source: IContentSizeChangedEvent) {
+		this.contentWidth = source.contentWidth;
+		this.contentHeight = source.contentHeight;
+
+		this.contentWidthChanged = source.contentWidthChanged;
+		this.contentHeightChanged = source.contentHeightChanged;
 	}
 }
 
@@ -66,13 +70,12 @@ export class ViewCursorStateChangedEvent {
 
 	public readonly type = ViewEventType.ViewCursorStateChanged;
 
-	/**
-	 * The primary selection is always at index 0.
-	 */
 	public readonly selections: Selection[];
+	public readonly modelSelections: Selection[];
 
-	constructor(selections: Selection[]) {
+	constructor(selections: Selection[], modelSelections: Selection[]) {
 		this.selections = selections;
+		this.modelSelections = modelSelections;
 	}
 }
 
@@ -80,8 +83,17 @@ export class ViewDecorationsChangedEvent {
 
 	public readonly type = ViewEventType.ViewDecorationsChanged;
 
-	constructor() {
-		// Nothing to do
+	readonly affectsMinimap: boolean;
+	readonly affectsOverviewRuler: boolean;
+
+	constructor(source: IModelDecorationsChangedEvent | null) {
+		if (source) {
+			this.affectsMinimap = source.affectsMinimap;
+			this.affectsOverviewRuler = source.affectsOverviewRuler;
+		} else {
+			this.affectsMinimap = true;
+			this.affectsOverviewRuler = true;
+		}
 	}
 }
 
@@ -103,6 +115,11 @@ export class ViewFocusChangedEvent {
 	constructor(isFocused: boolean) {
 		this.isFocused = isFocused;
 	}
+}
+
+export class ViewLanguageConfigurationEvent {
+
+	public readonly type = ViewEventType.ViewLanguageConfigurationChanged;
 }
 
 export class ViewLineMappingChangedEvent {
@@ -176,7 +193,9 @@ export const enum VerticalRevealType {
 	Center = 1,
 	CenterIfOutsideViewport = 2,
 	Top = 3,
-	Bottom = 4
+	Bottom = 4,
+	NearTop = 5,
+	NearTopIfOutsideViewport = 6,
 }
 
 export class ViewRevealRangeRequestEvent {
@@ -186,7 +205,12 @@ export class ViewRevealRangeRequestEvent {
 	/**
 	 * Range to be reavealed.
 	 */
-	public readonly range: Range;
+	public readonly range: Range | null;
+
+	/**
+	 * Selections to be revealed.
+	 */
+	public readonly selections: Selection[] | null;
 
 	public readonly verticalType: VerticalRevealType;
 	/**
@@ -197,8 +221,15 @@ export class ViewRevealRangeRequestEvent {
 
 	public readonly scrollType: ScrollType;
 
-	constructor(range: Range, verticalType: VerticalRevealType, revealHorizontal: boolean, scrollType: ScrollType) {
+	/**
+	 * Source of the call that caused the event.
+	 */
+	readonly source: string;
+
+	constructor(source: string, range: Range | null, selections: Selection[] | null, verticalType: VerticalRevealType, revealHorizontal: boolean, scrollType: ScrollType) {
+		this.source = source;
 		this.range = range;
+		this.selections = selections;
 		this.verticalType = verticalType;
 		this.revealHorizontal = revealHorizontal;
 		this.scrollType = scrollType;
@@ -232,6 +263,11 @@ export class ViewScrollChangedEvent {
 	}
 }
 
+export class ViewThemeChangedEvent {
+
+	public readonly type = ViewEventType.ViewThemeChanged;
+}
+
 export class ViewTokensChangedEvent {
 
 	public readonly type = ViewEventType.ViewTokensChanged;
@@ -249,14 +285,6 @@ export class ViewTokensChangedEvent {
 
 	constructor(ranges: { fromLineNumber: number; toLineNumber: number; }[]) {
 		this.ranges = ranges;
-	}
-}
-
-export class ViewThemeChangedEvent {
-
-	public readonly type = ViewEventType.ViewThemeChanged;
-
-	constructor() {
 	}
 }
 
@@ -278,31 +306,24 @@ export class ViewZonesChangedEvent {
 	}
 }
 
-export class ViewLanguageConfigurationEvent {
-
-	public readonly type = ViewEventType.ViewLanguageConfigurationChanged;
-
-	constructor() {
-	}
-}
-
 export type ViewEvent = (
 	ViewConfigurationChangedEvent
+	| ViewContentSizeChangedEvent
 	| ViewCursorStateChangedEvent
 	| ViewDecorationsChangedEvent
 	| ViewFlushedEvent
 	| ViewFocusChangedEvent
-	| ViewLinesChangedEvent
+	| ViewLanguageConfigurationEvent
 	| ViewLineMappingChangedEvent
+	| ViewLinesChangedEvent
 	| ViewLinesDeletedEvent
 	| ViewLinesInsertedEvent
 	| ViewRevealRangeRequestEvent
 	| ViewScrollChangedEvent
+	| ViewThemeChangedEvent
 	| ViewTokensChangedEvent
 	| ViewTokensColorsChangedEvent
 	| ViewZonesChangedEvent
-	| ViewThemeChangedEvent
-	| ViewLanguageConfigurationEvent
 );
 
 export interface IViewEventListener {
@@ -311,7 +332,7 @@ export interface IViewEventListener {
 
 export class ViewEventEmitter extends Disposable {
 	private _listeners: IViewEventListener[];
-	private _collector: ViewEventsCollector;
+	private _collector: ViewEventsCollector | null;
 	private _collectorCnt: number;
 
 	constructor() {
@@ -331,13 +352,13 @@ export class ViewEventEmitter extends Disposable {
 		if (this._collectorCnt === 1) {
 			this._collector = new ViewEventsCollector();
 		}
-		return this._collector;
+		return this._collector!;
 	}
 
 	protected _endEmit(): void {
 		this._collectorCnt--;
 		if (this._collectorCnt === 0) {
-			const events = this._collector.finalize();
+			const events = this._collector!.finalize();
 			this._collector = null;
 			if (events.length > 0) {
 				this._emit(events);
@@ -382,7 +403,7 @@ export class ViewEventsCollector {
 
 	public finalize(): ViewEvent[] {
 		let result = this._events;
-		this._events = null;
+		this._events = [];
 		return result;
 	}
 

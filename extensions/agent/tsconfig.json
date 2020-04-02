@@ -1,19 +1,18 @@
 {
-    "compileOnSave": true,
-    "compilerOptions": {
-        "module": "commonjs",
-        "target": "es6",
+	"extends": "../shared.tsconfig.json",
+	"compileOnSave": true,
+	"compilerOptions": {
 		"outDir": "./out",
 		"lib": [
 			"es6", "es2015.promise"
 		],
-        "sourceMap": true,
-        "emitDecoratorMetadata": true,
-        "experimentalDecorators": true,
-        "moduleResolution": "node",
-        "declaration": true
-    },
-    "exclude": [
-        "node_modules"
-    ]
+		"emitDecoratorMetadata": true,
+		"experimentalDecorators": true,
+		"moduleResolution": "node",
+		"strict": false,
+		"noUnusedParameters": false
+	},
+	"exclude": [
+		"node_modules"
+	]
 }

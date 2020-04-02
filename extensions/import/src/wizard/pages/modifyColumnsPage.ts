@@ -3,9 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 import * as nls from 'vscode-nls';
 import { ColumnMetadata, ImportDataModel } from '../api/models';
 import { ImportPage } from '../api/importPage';
@@ -51,12 +49,12 @@ export class ModifyColumnsPage extends ImportPage {
 		{ name: 'varchar(50)', displayName: 'varchar(50)' },
 		{ name: 'varchar(MAX)', displayName: 'varchar(MAX)' }
 	];
-	private table: sqlops.DeclarativeTableComponent;
-	private loading: sqlops.LoadingComponent;
-	private text: sqlops.TextComponent;
-	private form: sqlops.FormContainer;
+	private table: azdata.DeclarativeTableComponent;
+	private loading: azdata.LoadingComponent;
+	private text: azdata.TextComponent;
+	private form: azdata.FormContainer;
 
-	public constructor(instance: FlatFileWizard, wizardPage: sqlops.window.modelviewdialog.WizardPage, model: ImportDataModel, view: sqlops.ModelView, provider: FlatFileProvider) {
+	public constructor(instance: FlatFileWizard, wizardPage: azdata.window.WizardPage, model: ImportDataModel, view: azdata.ModelView, provider: FlatFileProvider) {
 		super(instance, wizardPage, model, view, provider);
 	}
 
@@ -95,9 +93,9 @@ export class ModifyColumnsPage extends ImportPage {
 						title: ''
 					}
 				], {
-					horizontal: false,
-					componentWidth: '100%'
-				}).component();
+				horizontal: false,
+				componentWidth: '100%'
+			}).component();
 
 		this.loading.component = this.form;
 		await this.view.initializeModel(this.form);
@@ -107,27 +105,27 @@ export class ModifyColumnsPage extends ImportPage {
 	async onPageEnter(): Promise<boolean> {
 		this.loading.loading = true;
 		await this.populateTable();
-		this.instance.changeNextButtonLabel(localize('flatFileImport.importData', 'Import Data'));
+		this.instance.changeNextButtonLabel(localize('flatFileImport.importData', "Import Data"));
 		this.loading.loading = false;
 
 		return true;
 	}
 
 	async onPageLeave(): Promise<boolean> {
-		this.instance.changeNextButtonLabel(localize('flatFileImport.next', 'Next'));
+		this.instance.changeNextButtonLabel(localize('flatFileImport.next', "Next"));
 		return undefined;
 	}
 
 	async cleanup(): Promise<boolean> {
 		delete this.model.proseColumns;
-		this.instance.changeNextButtonLabel(localize('flatFileImport.next', 'Next'));
+		this.instance.changeNextButtonLabel(localize('flatFileImport.next', "Next"));
 
 		return true;
 	}
 
 	public setupNavigationValidator() {
 		this.instance.registerNavigationValidator((info) => {
-			return !this.loading.loading;
+			return !this.loading.loading && this.table.data && this.table.data.length > 0;
 		});
 	}
 
@@ -141,24 +139,24 @@ export class ModifyColumnsPage extends ImportPage {
 		this.table.updateProperties({
 			height: 400,
 			columns: [{
-				displayName: localize('flatFileImport.columnName', 'Column Name'),
-				valueType: sqlops.DeclarativeDataType.string,
+				displayName: localize('flatFileImport.columnName', "Column Name"),
+				valueType: azdata.DeclarativeDataType.string,
 				width: '150px',
 				isReadOnly: false
 			}, {
-				displayName: localize('flatFileImport.dataType', 'Data Type'),
-				valueType: sqlops.DeclarativeDataType.editableCategory,
+				displayName: localize('flatFileImport.dataType', "Data Type"),
+				valueType: azdata.DeclarativeDataType.editableCategory,
 				width: '150px',
 				isReadOnly: false,
 				categoryValues: this.categoryValues
 			}, {
-				displayName: localize('flatFileImport.primaryKey', 'Primary Key'),
-				valueType: sqlops.DeclarativeDataType.boolean,
+				displayName: localize('flatFileImport.primaryKey', "Primary Key"),
+				valueType: azdata.DeclarativeDataType.boolean,
 				width: '100px',
 				isReadOnly: false
 			}, {
-				displayName: localize('flatFileImport.allowNulls', 'Allow Nulls'),
-				valueType: sqlops.DeclarativeDataType.boolean,
+				displayName: localize('flatFileImport.allowNulls', "Allow Nulls"),
+				valueType: azdata.DeclarativeDataType.boolean,
 				isReadOnly: false,
 				width: '100px'
 			}],

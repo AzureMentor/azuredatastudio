@@ -2,14 +2,13 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { TPromise } from 'vs/base/common/winjs.base';
 import { Event } from 'vs/base/common/event';
 import { Color } from 'vs/base/common/color';
-import { ITheme, IThemeService } from 'vs/platform/theme/common/themeService';
+import { IColorTheme, IThemeService, IFileIconTheme } from 'vs/platform/theme/common/themeService';
 import { ConfigurationTarget } from 'vs/platform/configuration/common/configuration';
+import { URI } from 'vs/base/common/uri';
 
 export const IWorkbenchThemeService = createDecorator<IWorkbenchThemeService>('themeService');
 
@@ -19,54 +18,72 @@ export const VS_HC_THEME = 'hc-black';
 
 export const HC_THEME_ID = 'Default High Contrast';
 
-export const COLOR_THEME_SETTING = 'workbench.colorTheme';
-export const DETECT_HC_SETTING = 'window.autoDetectHighContrast';
-export const ICON_THEME_SETTING = 'workbench.iconTheme';
-export const CUSTOM_WORKBENCH_COLORS_SETTING = 'workbench.colorCustomizations';
-export const CUSTOM_EDITOR_COLORS_SETTING = 'editor.tokenColorCustomizations';
-export const CUSTOM_EDITOR_SCOPE_COLORS_SETTING = 'textMateRules';
+export enum ThemeSettings {
+	COLOR_THEME = 'workbench.colorTheme',
+	FILE_ICON_THEME = 'workbench.iconTheme',
+	PRODUCT_ICON_THEME = 'workbench.productIconTheme',
+	COLOR_CUSTOMIZATIONS = 'workbench.colorCustomizations',
+	TOKEN_COLOR_CUSTOMIZATIONS = 'editor.tokenColorCustomizations',
+	TOKEN_COLOR_CUSTOMIZATIONS_EXPERIMENTAL = 'editor.tokenColorCustomizationsExperimental',
 
-export interface IColorTheme extends ITheme {
+	PREFERRED_DARK_THEME = 'workbench.preferredDarkColorTheme',
+	PREFERRED_LIGHT_THEME = 'workbench.preferredLightColorTheme',
+	PREFERRED_HC_THEME = 'workbench.preferredHighContrastColorTheme',
+	DETECT_COLOR_SCHEME = 'window.autoDetectColorScheme',
+	DETECT_HC = 'window.autoDetectHighContrast'
+}
+
+export interface IWorkbenchTheme {
 	readonly id: string;
 	readonly label: string;
-	readonly settingsId: string;
-	readonly extensionData: ExtensionData;
+	readonly extensionData?: ExtensionData;
 	readonly description?: string;
-	readonly isLoaded: boolean;
-	readonly tokenColors: ITokenColorizationRule[];
+	readonly settingsId: string | null;
+}
+
+export interface IWorkbenchColorTheme extends IWorkbenchTheme, IColorTheme {
+	readonly settingsId: string;
+	readonly tokenColors: ITextMateThemingRule[];
 }
 
 export interface IColorMap {
 	[id: string]: Color;
 }
 
-export interface IFileIconTheme {
-	readonly id: string;
-	readonly label: string;
-	readonly settingsId: string;
-	readonly description?: string;
-	readonly extensionData: ExtensionData;
-
-	readonly isLoaded: boolean;
-	readonly hasFileIcons?: boolean;
-	readonly hasFolderIcons?: boolean;
-	readonly hidesExplorerArrows?: boolean;
+export interface IWorkbenchFileIconTheme extends IWorkbenchTheme, IFileIconTheme {
 }
 
-export interface IWorkbenchThemeService extends IThemeService {
-	_serviceBrand: any;
-	setColorTheme(themeId: string, settingsTarget: ConfigurationTarget): TPromise<IColorTheme>;
-	getColorTheme(): IColorTheme;
-	getColorThemes(): TPromise<IColorTheme[]>;
-	onDidColorThemeChange: Event<IColorTheme>;
+export interface IWorkbenchProductIconTheme extends IWorkbenchTheme {
+	readonly settingsId: string;
+}
 
-	setFileIconTheme(iconThemeId: string, settingsTarget: ConfigurationTarget): TPromise<IFileIconTheme>;
-	getFileIconTheme(): IFileIconTheme;
-	getFileIconThemes(): TPromise<IFileIconTheme[]>;
-	onDidFileIconThemeChange: Event<IFileIconTheme>;
+
+export interface IWorkbenchThemeService extends IThemeService {
+	_serviceBrand: undefined;
+	setColorTheme(themeId: string | undefined, settingsTarget: ConfigurationTarget | undefined | 'auto'): Promise<IWorkbenchColorTheme | null>;
+	getColorTheme(): IWorkbenchColorTheme;
+	getColorThemes(): Promise<IWorkbenchColorTheme[]>;
+	onDidColorThemeChange: Event<IWorkbenchColorTheme>;
+	restoreColorTheme(): void;
+
+	setFileIconTheme(iconThemeId: string | undefined, settingsTarget: ConfigurationTarget | undefined | 'auto'): Promise<IWorkbenchFileIconTheme>;
+	getFileIconTheme(): IWorkbenchFileIconTheme;
+	getFileIconThemes(): Promise<IWorkbenchFileIconTheme[]>;
+	onDidFileIconThemeChange: Event<IWorkbenchFileIconTheme>;
+
+	setProductIconTheme(iconThemeId: string | undefined, settingsTarget: ConfigurationTarget | undefined | 'auto'): Promise<IWorkbenchProductIconTheme>;
+	getProductIconTheme(): IWorkbenchProductIconTheme;
+	getProductIconThemes(): Promise<IWorkbenchProductIconTheme[]>;
+	onDidProductIconThemeChange: Event<IWorkbenchProductIconTheme>;
+
+}
+
+export interface IColorCustomizations {
+	[colorIdOrThemeSettingsId: string]: string | IColorCustomizations;
 }
 
 export interface ITokenColorCustomizations {
+	[groupIdOrThemeSettingsId: string]: string | ITokenColorizationSetting | ITokenColorCustomizations | undefined | ITextMateThemingRule[] | boolean;
 	comments?: string | ITokenColorizationSetting;
 	strings?: string | ITokenColorizationSetting;
 	numbers?: string | ITokenColorizationSetting;
@@ -74,10 +91,15 @@ export interface ITokenColorCustomizations {
 	types?: string | ITokenColorizationSetting;
 	functions?: string | ITokenColorizationSetting;
 	variables?: string | ITokenColorizationSetting;
-	textMateRules?: ITokenColorizationRule[];
+	textMateRules?: ITextMateThemingRule[];
+	semanticHighlighting?: boolean;
 }
 
-export interface ITokenColorizationRule {
+export interface IExperimentalTokenStyleCustomizations {
+	[styleRuleOrThemeSettingsId: string]: string | ITokenColorizationSetting | IExperimentalTokenStyleCustomizations | undefined;
+}
+
+export interface ITextMateThemingRule {
 	name?: string;
 	scope?: string | string[];
 	settings: ITokenColorizationSetting;
@@ -86,7 +108,7 @@ export interface ITokenColorizationRule {
 export interface ITokenColorizationSetting {
 	foreground?: string;
 	background?: string;
-	fontStyle?: string;  // italic, underline, bold
+	fontStyle?: string; /* [italic|underline|bold] */
 }
 
 export interface ExtensionData {
@@ -94,6 +116,7 @@ export interface ExtensionData {
 	extensionPublisher: string;
 	extensionName: string;
 	extensionIsBuiltin: boolean;
+	extensionLocation: URI;
 }
 
 export interface IThemeExtensionPoint {
@@ -101,4 +124,6 @@ export interface IThemeExtensionPoint {
 	label?: string;
 	description?: string;
 	path: string;
+	uiTheme?: typeof VS_LIGHT_THEME | typeof VS_DARK_THEME | typeof VS_HC_THEME;
+	_watch: boolean; // unsupported options to watch location
 }

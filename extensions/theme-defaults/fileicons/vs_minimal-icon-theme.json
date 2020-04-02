@@ -1,37 +1,42 @@
 {
 	"iconDefinitions": {
 		"_root_folder_dark": {
-			"iconPath": "./images/RootFolder_16x_inverse.svg"
+			"iconPath": "./images/root-folder-dark.svg"
 		},
 		"_root_folder_open_dark": {
-			"iconPath": "./images/RootFolderOpen_16x_inverse.svg"
+			"iconPath": "./images/root-folder-open-dark.svg"
 		},
 		"_folder_dark": {
-			"iconPath": "./images/Folder_16x_inverse.svg"
+			"iconPath": "./images/folder-dark.svg"
 		},
 		"_folder_open_dark": {
-			"iconPath": "./images/FolderOpen_16x_inverse.svg"
+			"iconPath": "./images/folder-open-dark.svg"
 		},
 		"_file_dark": {
-			"iconPath": "./images/Document_16x_inverse.svg"
+			"iconPath": "./images/document-dark.svg"
 		},
 		"_root_folder": {
-			"iconPath": "./images/RootFolder_16x.svg"
+			"iconPath": "./images/root-folder-light.svg"
 		},
 		"_root_folder_open": {
-			"iconPath": "./images/RootFolderOpen_16x.svg"
+			"iconPath": "./images/root-folder-open-light.svg"
 		},
 		"_folder_light": {
-			"iconPath": "./images/Folder_16x.svg"
+			"iconPath": "./images/folder-light.svg"
 		},
 		"_folder_open_light": {
-			"iconPath": "./images/FolderOpen_16x.svg"
+			"iconPath": "./images/folder-open-light.svg"
 		},
 		"_file_light": {
-			"iconPath": "./images/Document_16x.svg"
+			"iconPath": "./images/document-light.svg"
+		},
+		"notebook": {
+			"iconPath": "./images/notebook.svg"
+		},
+		"notebook_dark": {
+			"iconPath": "./images/notebook_inverse.svg"
 		}
 	},
-
 	"folderExpanded": "_folder_open_dark",
 	"folder": "_folder_dark",
 	"file": "_file_dark",
@@ -39,12 +44,14 @@
 	"rootFolder": "_root_folder_dark",
 	"fileExtensions": {
 		// icons by file extension
+		"ipynb": "notebook_dark"
 	},
 	"fileNames": {
 		// icons by file name
 	},
 	"languageIds": {
 		// icons by language id
+		"notebook": "notebook_dark"
 	},
 	"light": {
 		"folderExpanded": "_folder_open_light",
@@ -54,12 +61,14 @@
 		"file": "_file_light",
 		"fileExtensions": {
 			// icons by file extension
+			"ipynb": "notebook"
 		},
 		"fileNames": {
 			// icons by file name
 		},
 		"languageIds": {
 			// icons by language id
+			"notebook": "notebook"
 		}
 	},
 	"highContrast": {

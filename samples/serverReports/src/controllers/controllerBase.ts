@@ -8,18 +8,18 @@
 import * as vscode from 'vscode';
 
 export default abstract class ControllerBase implements vscode.Disposable {
-    protected _context: vscode.ExtensionContext;
+	protected _context: vscode.ExtensionContext;
 
-    public constructor(context: vscode.ExtensionContext) {
-        this._context = context;
-    }
+	public constructor(context: vscode.ExtensionContext) {
+		this._context = context;
+	}
 
-    abstract activate(): Promise<boolean>;
+	abstract activate(): Promise<boolean>;
 
-    abstract deactivate(): void;
+	abstract deactivate(): void;
 
-    public dispose(): void {
-        this.deactivate();
-    }
+	public dispose(): void {
+		this.deactivate();
+	}
 }
 

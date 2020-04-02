@@ -3,18 +3,13 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import 'vs/css!./media/taskbar';
 import 'vs/css!./media/icons';
-import 'vs/css!sql/media/icons/common-icons';
 
 import { ActionBar } from './actionbar';
 
-import { Builder, $ } from 'vs/base/browser/builder';
-import { Action, IActionRunner, IAction } from 'vs/base/common/actions';
-import { ActionsOrientation } from 'vs/base/browser/ui/actionbar/actionbar';
-import { IContextMenuProvider } from 'vs/base/browser/ui/dropdown/dropdown';
+import { IActionRunner, IAction } from 'vs/base/common/actions';
+import { ActionsOrientation, IActionViewItem } from 'vs/base/browser/ui/actionbar/actionbar';
 import { IToolBarOptions } from 'vs/base/browser/ui/toolbar/toolbar';
 
 /**
@@ -37,21 +32,19 @@ export interface ITaskbarContent {
 export class Taskbar {
 	private options: IToolBarOptions;
 	private actionBar: ActionBar;
-	private lookupKeybindings: boolean;
 
-	constructor(container: HTMLElement, contextMenuProvider: IContextMenuProvider, options: IToolBarOptions = { orientation: ActionsOrientation.HORIZONTAL }) {
+	constructor(container: HTMLElement, options: IToolBarOptions = { orientation: ActionsOrientation.HORIZONTAL }) {
 		this.options = options;
-		this.lookupKeybindings = typeof this.options.getKeyBinding === 'function' && typeof this.options.getKeyBinding === 'function';
 
 		let element = document.createElement('div');
 		element.className = 'monaco-toolbar carbon-taskbar';
 		container.appendChild(element);
 
-		this.actionBar = new ActionBar($(element), {
+		this.actionBar = new ActionBar(element, {
 			orientation: options.orientation,
 			ariaLabel: options.ariaLabel,
-			actionItemProvider: (action: Action) => {
-				return options.actionItemProvider ? options.actionItemProvider(action) : null;
+			actionViewItemProvider: (action: IAction): IActionViewItem | undefined => {
+				return options.actionViewItemProvider ? options.actionViewItemProvider(action) : undefined;
 			}
 		});
 	}
@@ -71,7 +64,7 @@ export class Taskbar {
 	 */
 	public static createTaskbarSpinner(): HTMLElement {
 		let spinnerContainer = document.createElement('div');
-		spinnerContainer.className = 'taskbar-progress icon in-progress ';
+		spinnerContainer.className = 'taskbar-progress codicon in-progress ';
 		spinnerContainer.style.visibility = 'hidden';
 		return spinnerContainer;
 	}
@@ -98,7 +91,7 @@ export class Taskbar {
 		this.actionBar.context = context;
 	}
 
-	public getContainer(): Builder {
+	public getContainer(): HTMLElement {
 		return this.actionBar.getContainer();
 	}
 
@@ -131,8 +124,9 @@ export class Taskbar {
 	}
 
 	private getKeybindingLabel(action: IAction): string {
-		const key = this.lookupKeybindings ? this.options.getKeyBinding(action) : void 0;
-		return key ? key.getLabel() : '';
+		const key = this.options.getKeyBinding ? this.options.getKeyBinding(action) : undefined;
+		const label = key ? key.getLabel() : undefined;
+		return label || '';
 	}
 
 	public addAction(primaryAction: IAction): void {
@@ -146,4 +140,5 @@ export class Taskbar {
 	public dispose(): void {
 		this.actionBar.dispose();
 	}
+
 }

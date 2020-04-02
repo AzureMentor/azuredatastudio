@@ -5,6 +5,8 @@
 
 .monaco-breadcrumbs {
 	user-select: none;
+	-webkit-user-select: none;
+	-ms-user-select: none;
 	display: flex;
 	flex-direction: row;
 	flex-wrap: nowrap;
@@ -23,18 +25,10 @@
 	outline: none;
 }
 
-.monaco-breadcrumbs .monaco-breadcrumb-item:not(:first-child)::before {
-	background-image: url(./collapsed.svg);
-	opacity: .7;
-	width: 16px;
-	height: 16px;
-	display: inline-block;
-	background-size: 16px;
-	background-position: 50% 50%;
+.monaco-breadcrumbs .monaco-breadcrumb-item .codicon-chevron-right {
+	color: inherit;
+}
+
+.monaco-breadcrumbs .monaco-breadcrumb-item:first-of-type::before {
 	content: ' ';
 }
-
-.vs-dark .monaco-breadcrumbs .monaco-breadcrumb-item:not(:first-child)::before {
-	background-image: url(./collpased-dark.svg);
-}
-

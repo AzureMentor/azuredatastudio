@@ -8,17 +8,17 @@ import { Directive, Inject, forwardRef, ElementRef, Input } from '@angular/core'
 import { ScrollableElement } from 'vs/base/browser/ui/scrollbar/scrollableElement';
 import { ScrollbarVisibility } from 'vs/base/common/scrollable';
 import { getContentHeight, addDisposableListener, EventType, getContentWidth } from 'vs/base/browser/dom';
-import { AngularDisposable } from 'sql/base/common/lifecycle';
+import { AngularDisposable } from 'sql/base/browser/lifecycle';
 
 @Directive({
 	selector: '[scrollable]'
 })
 export class ScrollableDirective extends AngularDisposable {
-	private scrollableElement: ScrollableElement;
-	private parent: HTMLElement;
-	private scrolled: HTMLElement;
-	@Input() horizontalScroll: ScrollbarVisibility;
-	@Input() verticalScroll: ScrollbarVisibility;
+	private scrollableElement!: ScrollableElement;
+	private parent!: HTMLElement;
+	private scrolled!: HTMLElement;
+	@Input() horizontalScroll?: ScrollbarVisibility;
+	@Input() verticalScroll?: ScrollbarVisibility;
 	@Input() useShadow = false;
 	@Input() scrollYToX = false;
 
@@ -30,7 +30,7 @@ export class ScrollableDirective extends AngularDisposable {
 
 	ngOnInit() {
 		this.scrolled = this._el.nativeElement as HTMLElement;
-		this.parent = this.scrolled.parentElement;
+		this.parent = this.scrolled.parentElement!;
 		const next = this.scrolled.nextSibling;
 		this.parent.removeChild(this.scrolled);
 
@@ -74,7 +74,7 @@ export class ScrollableDirective extends AngularDisposable {
 	private resetScrollDimensions() {
 		this.scrollableElement.setScrollDimensions({
 			scrollHeight: this.verticalScroll === ScrollbarVisibility.Auto ? getContentHeight(this.scrolled) : undefined,
-			height:  this.verticalScroll === ScrollbarVisibility.Auto ? getContentHeight(this.parent) : undefined,
+			height: this.verticalScroll === ScrollbarVisibility.Auto ? getContentHeight(this.parent) : undefined,
 			scrollWidth: this.horizontalScroll === ScrollbarVisibility.Auto ? this.scrolled.scrollWidth : undefined,
 			width: this.horizontalScroll === ScrollbarVisibility.Auto ? this.scrolled.offsetWidth : undefined
 		});

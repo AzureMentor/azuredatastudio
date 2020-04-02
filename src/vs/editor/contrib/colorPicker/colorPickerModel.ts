@@ -3,8 +3,8 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event, Emitter } from 'vs/base/common/event';
 import { Color } from 'vs/base/common/color';
+import { Emitter, Event } from 'vs/base/common/event';
 import { IColorPresentation } from 'vs/editor/common/modes';
 
 export class ColorPickerModel {
@@ -41,13 +41,13 @@ export class ColorPickerModel {
 		this._onDidChangePresentation.fire(this.presentation);
 	}
 
-	private _onColorFlushed = new Emitter<Color>();
+	private readonly _onColorFlushed = new Emitter<Color>();
 	readonly onColorFlushed: Event<Color> = this._onColorFlushed.event;
 
-	private _onDidChangeColor = new Emitter<Color>();
+	private readonly _onDidChangeColor = new Emitter<Color>();
 	readonly onDidChangeColor: Event<Color> = this._onDidChangeColor.event;
 
-	private _onDidChangePresentation = new Emitter<IColorPresentation>();
+	private readonly _onDidChangePresentation = new Emitter<IColorPresentation>();
 	readonly onDidChangePresentation: Event<IColorPresentation> = this._onDidChangePresentation.event;
 
 	constructor(color: Color, availableColorPresentations: IColorPresentation[], private presentationIndex: number) {

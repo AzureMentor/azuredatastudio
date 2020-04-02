@@ -2,17 +2,13 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as assert from 'assert';
 import { ScrollbarState } from 'vs/base/browser/ui/scrollbar/scrollbarState';
 
 suite('ScrollbarState', () => {
 	test('inflates slider size', () => {
-		let actual = new ScrollbarState(0, 14, 0);
-		actual.setVisibleSize(339);
-		actual.setScrollSize(42423);
-		actual.setScrollPosition(32787);
+		let actual = new ScrollbarState(0, 14, 0, 339, 42423, 32787);
 
 		assert.equal(actual.getArrowSize(), 0);
 		assert.equal(actual.getScrollPosition(), 32787);
@@ -35,10 +31,7 @@ suite('ScrollbarState', () => {
 	});
 
 	test('inflates slider size with arrows', () => {
-		let actual = new ScrollbarState(12, 14, 0);
-		actual.setVisibleSize(339);
-		actual.setScrollSize(42423);
-		actual.setScrollPosition(32787);
+		let actual = new ScrollbarState(12, 14, 0, 339, 42423, 32787);
 
 		assert.equal(actual.getArrowSize(), 12);
 		assert.equal(actual.getScrollPosition(), 32787);

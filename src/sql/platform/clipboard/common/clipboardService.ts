@@ -3,8 +3,6 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import { IClipboardService as vsIClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
@@ -15,5 +13,5 @@ export interface IClipboardService extends vsIClipboardService {
 	/**
 	 * Writes the input image as a dataurl to the clipbaord
 	 */
-	writeImageDataUrl(data: string): void;
+	writeImageDataUrl(data: string): Promise<void>;
 }

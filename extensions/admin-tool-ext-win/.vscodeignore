@@ -1,0 +1,9 @@
+coverage
+out/test
+src
+.gitignore
+coverConfig.json
+tsconfig.json
+InstallSsmsMin.bat
+cgmanifest.json
+.vscode

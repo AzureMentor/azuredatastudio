@@ -1,0 +1,14 @@
+{
+	"extends": "../shared.sql.tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./out",
+		"strict": false,
+		"noUnusedParameters": false,
+		"typeRoots": [
+			"./node_modules/@types"
+		]
+	},
+	"include": [
+		"src/**/*"
+	]
+}

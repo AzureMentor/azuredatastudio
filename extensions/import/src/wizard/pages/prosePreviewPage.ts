@@ -3,9 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 import * as nls from 'vscode-nls';
 import { ImportDataModel } from '../api/models';
 import { ImportPage } from '../api/importPage';
@@ -15,32 +13,51 @@ import { FlatFileWizard } from '../flatFileWizard';
 const localize = nls.loadMessageBundle();
 
 export class ProsePreviewPage extends ImportPage {
-	private table: sqlops.TableComponent;
-	private loading: sqlops.LoadingComponent;
-	private form: sqlops.FormContainer;
-	private refresh: sqlops.ButtonComponent;
 
-	public constructor(instance: FlatFileWizard, wizardPage: sqlops.window.modelviewdialog.WizardPage, model: ImportDataModel, view: sqlops.ModelView, provider: FlatFileProvider) {
+	private readonly successTitle: string = localize('flatFileImport.prosePreviewMessage', "This operation analyzed the input file structure to generate the preview below for up to the first 50 rows.");
+	private readonly failureTitle: string = localize('flatFileImport.prosePreviewMessageFail', "This operation was unsuccessful. Please try a different input file.");
+
+	private table: azdata.TableComponent;
+	private loading: azdata.LoadingComponent;
+	private form: azdata.FormContainer;
+	private refresh: azdata.ButtonComponent;
+	private resultTextComponent: azdata.TextComponent;
+	private isSuccess: boolean;
+
+	public constructor(instance: FlatFileWizard, wizardPage: azdata.window.WizardPage, model: ImportDataModel, view: azdata.ModelView, provider: FlatFileProvider) {
 		super(instance, wizardPage, model, view, provider);
 	}
 
 	async start(): Promise<boolean> {
-		this.table = this.view.modelBuilder.table().component();
+		this.table = this.view.modelBuilder.table().withProperties<azdata.TableComponentProperties>({
+			data: undefined,
+			columns: undefined,
+			forceFitColumns: azdata.ColumnSizingMode.AutoFit
+		}).component();
 		this.refresh = this.view.modelBuilder.button().withProperties({
-			label: localize('flatFileImport.refresh', 'Refresh'),
+			label: localize('flatFileImport.refresh', "Refresh"),
 			isFile: false
 		}).component();
 
 		this.refresh.onDidClick(async () => {
-			this.onPageEnter();
+			await this.onPageEnter();
 		});
 
 		this.loading = this.view.modelBuilder.loadingComponent().component();
 
+		this.resultTextComponent = this.view.modelBuilder.text()
+			.withProperties({
+				value: this.isSuccess ? this.successTitle : this.failureTitle
+			}).component();
+
 		this.form = this.view.modelBuilder.formContainer().withFormItems([
 			{
+				component: this.resultTextComponent,
+				title: ''
+			},
+			{
 				component: this.table,
-				title: localize('flatFileImport.prosePreviewMessage', 'This operation analyzed the input file structure to generate the preview below for up to the first 50 rows.'),
+				title: '',
 				actions: [this.refresh]
 			}
 		]).component();
@@ -54,11 +71,30 @@ export class ProsePreviewPage extends ImportPage {
 
 	async onPageEnter(): Promise<boolean> {
 		this.loading.loading = true;
-		await this.handleProse();
-		await this.populateTable(this.model.proseDataPreview, this.model.proseColumns.map(c => c.columnName));
-		this.loading.loading = false;
+		let proseResult: boolean;
+		let error: string;
+		try {
+			proseResult = await this.handleProse();
+		} catch (ex) {
+			error = ex.toString();
+		}
 
-		return true;
+		this.loading.loading = false;
+		if (proseResult) {
+			await this.populateTable(this.model.proseDataPreview, this.model.proseColumns.map(c => c.columnName));
+			this.isSuccess = true;
+			if (this.form) {
+				this.resultTextComponent.value = this.successTitle;
+			}
+			return true;
+		} else {
+			await this.populateTable([], []);
+			this.isSuccess = false;
+			if (this.form) {
+				this.resultTextComponent.value = this.failureTitle + '\n' + (error ?? '');
+			}
+			return false;
+		}
 	}
 
 	async onPageLeave(): Promise<boolean> {
@@ -73,20 +109,32 @@ export class ProsePreviewPage extends ImportPage {
 
 	public setupNavigationValidator() {
 		this.instance.registerNavigationValidator((info) => {
+			if (info) {
+				// Prose Preview to Modify Columns
+				if (info.lastPage === 1 && info.newPage === 2) {
+					return !this.loading.loading && this.table.data && this.table.data.length > 0;
+				}
+			}
 			return !this.loading.loading;
 		});
 	}
 
-	private async handleProse() {
-		await this.provider.sendPROSEDiscoveryRequest({
+	private async handleProse(): Promise<boolean> {
+		const response = await this.provider.sendPROSEDiscoveryRequest({
 			filePath: this.model.filePath,
 			tableName: this.model.table,
 			schemaName: this.model.schema,
 			fileType: this.model.fileType
-		}).then((result) => {
-			this.model.proseDataPreview = result.dataPreview;
-			this.model.proseColumns = [];
-			result.columnInfo.forEach((column) => {
+		});
+
+		this.model.proseDataPreview = null;
+		if (response.dataPreview) {
+			this.model.proseDataPreview = response.dataPreview;
+		}
+
+		this.model.proseColumns = [];
+		if (response.columnInfo) {
+			response.columnInfo.forEach((column) => {
 				this.model.proseColumns.push({
 					columnName: column.name,
 					dataType: column.sqlType,
@@ -94,7 +142,10 @@ export class ProsePreviewPage extends ImportPage {
 					nullable: column.isNullable
 				});
 			});
-		});
+			return true;
+		}
+
+		return false;
 	}
 
 	private async populateTable(tableData: string[][], columnHeaders: string[]) {
@@ -119,5 +170,4 @@ export class ProsePreviewPage extends ImportPage {
 	private async emptyTable() {
 		this.table.updateProperties([]);
 	}
-
 }

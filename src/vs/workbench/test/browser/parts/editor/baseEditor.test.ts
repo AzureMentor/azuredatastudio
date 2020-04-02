@@ -3,25 +3,23 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import * as assert from 'assert';
 import { BaseEditor, EditorMemento } from 'vs/workbench/browser/parts/editor/baseEditor';
 import { EditorInput, EditorOptions, IEditorInputFactory, IEditorInputFactoryRegistry, Extensions as EditorExtensions } from 'vs/workbench/common/editor';
-import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import * as Platform from 'vs/platform/registry/common/platform';
 import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { NullTelemetryService } from 'vs/platform/telemetry/common/telemetryUtils';
-import { workbenchInstantiationService, TestEditorGroup, TestEditorGroupsService } from 'vs/workbench/test/workbenchTestServices';
+import { workbenchInstantiationService, TestEditorGroupView, TestEditorGroupsService } from 'vs/workbench/test/browser/workbenchTestServices';
 import { ResourceEditorInput } from 'vs/workbench/common/editor/resourceEditorInput';
 import { TestThemeService } from 'vs/platform/theme/test/common/testThemeService';
-import URI from 'vs/base/common/uri';
+import { URI } from 'vs/base/common/uri';
 import { IEditorRegistry, Extensions, EditorDescriptor } from 'vs/workbench/browser/editor';
 import { CancellationToken } from 'vs/base/common/cancellation';
-import { TPromise } from 'vs/base/common/winjs.base';
 import { IEditorModel } from 'vs/platform/editor/common/editor';
+import { dispose } from 'vs/base/common/lifecycle';
+import { TestStorageService } from 'vs/workbench/test/common/workbenchTestServices';
 
 const NullThemeService = new TestThemeService();
 
@@ -31,7 +29,7 @@ let EditorInputRegistry: IEditorInputFactoryRegistry = Platform.Registry.as(Edit
 export class MyEditor extends BaseEditor {
 
 	constructor(@ITelemetryService telemetryService: ITelemetryService) {
-		super('MyEditor', NullTelemetryService, NullThemeService);
+		super('MyEditor', NullTelemetryService, NullThemeService, new TestStorageService());
 	}
 
 	getId(): string { return 'myEditor'; }
@@ -42,7 +40,7 @@ export class MyEditor extends BaseEditor {
 export class MyOtherEditor extends BaseEditor {
 
 	constructor(@ITelemetryService telemetryService: ITelemetryService) {
-		super('myOtherEditor', NullTelemetryService, NullThemeService);
+		super('myOtherEditor', NullTelemetryService, NullThemeService, new TestStorageService());
 	}
 
 	getId(): string { return 'myOtherEditor'; }
@@ -52,6 +50,10 @@ export class MyOtherEditor extends BaseEditor {
 }
 
 class MyInputFactory implements IEditorInputFactory {
+
+	canSerialize(editorInput: EditorInput): boolean {
+		return true;
+	}
 
 	serialize(input: EditorInput): string {
 		return input.toString();
@@ -63,6 +65,9 @@ class MyInputFactory implements IEditorInputFactory {
 }
 
 class MyInput extends EditorInput {
+
+	readonly resource = undefined;
+
 	getPreferredEditorId(ids: string[]) {
 		return ids[1];
 	}
@@ -77,6 +82,9 @@ class MyInput extends EditorInput {
 }
 
 class MyOtherInput extends EditorInput {
+
+	readonly resource = undefined;
+
 	getTypeId(): string {
 		return '';
 	}
@@ -85,54 +93,50 @@ class MyOtherInput extends EditorInput {
 		return null;
 	}
 }
-class MyResourceInput extends ResourceEditorInput { }
+class MyResourceEditorInput extends ResourceEditorInput { }
 
 suite('Workbench base editor', () => {
 
-	test('BaseEditor API', function () {
+	test('BaseEditor API', async () => {
 		let e = new MyEditor(NullTelemetryService);
 		let input = new MyOtherInput();
 		let options = new EditorOptions();
 
 		assert(!e.isVisible());
 		assert(!e.input);
-		assert(!e.options);
-		return e.setInput(input, options, CancellationToken.None).then(() => {
-			assert.strictEqual(input, e.input);
-			assert.strictEqual(options, e.options);
 
-			const group = new TestEditorGroup(1);
-			e.setVisible(true, group);
-			assert(e.isVisible());
-			assert.equal(e.group, group);
-			input.onDispose(() => {
-				assert(false);
-			});
-			e.dispose();
-			e.clearInput();
-			e.setVisible(false, group);
-			assert(!e.isVisible());
-			assert(!e.input);
-			assert(!e.options);
-			assert(!e.getControl());
+		await e.setInput(input, options, CancellationToken.None);
+		assert.strictEqual(input, e.input);
+		const group = new TestEditorGroupView(1);
+		e.setVisible(true, group);
+		assert(e.isVisible());
+		assert.equal(e.group, group);
+		input.onDispose(() => {
+			assert(false);
 		});
+		e.dispose();
+		e.clearInput();
+		e.setVisible(false, group);
+		assert(!e.isVisible());
+		assert(!e.input);
+		assert(!e.getControl());
 	});
 
-	test('EditorDescriptor', function () {
-		let d = new EditorDescriptor(MyEditor, 'id', 'name');
+	test('EditorDescriptor', () => {
+		let d = EditorDescriptor.create(MyEditor, 'id', 'name');
 		assert.strictEqual(d.getId(), 'id');
 		assert.strictEqual(d.getName(), 'name');
 	});
 
 	test('Editor Registration', function () {
-		let d1 = new EditorDescriptor(MyEditor, 'id1', 'name');
-		let d2 = new EditorDescriptor(MyOtherEditor, 'id2', 'name');
+		let d1 = EditorDescriptor.create(MyEditor, 'id1', 'name');
+		let d2 = EditorDescriptor.create(MyOtherEditor, 'id2', 'name');
 
 		let oldEditorsCnt = EditorRegistry.getEditors().length;
 		let oldInputCnt = (<any>EditorRegistry).getEditorInputs().length;
 
-		EditorRegistry.registerEditor(d1, new SyncDescriptor(MyInput));
-		EditorRegistry.registerEditor(d2, [new SyncDescriptor(MyInput), new SyncDescriptor(MyOtherInput)]);
+		const dispose1 = EditorRegistry.registerEditor(d1, [new SyncDescriptor(MyInput)]);
+		const dispose2 = EditorRegistry.registerEditor(d2, [new SyncDescriptor(MyInput), new SyncDescriptor(MyOtherInput)]);
 
 		assert.equal(EditorRegistry.getEditors().length, oldEditorsCnt + 2);
 		assert.equal((<any>EditorRegistry).getEditorInputs().length, oldInputCnt + 3);
@@ -143,62 +147,52 @@ suite('Workbench base editor', () => {
 		assert.strictEqual(EditorRegistry.getEditorById('id1'), d1);
 		assert.strictEqual(EditorRegistry.getEditorById('id2'), d2);
 		assert(!EditorRegistry.getEditorById('id3'));
+
+		dispose([dispose1, dispose2]);
 	});
 
 	test('Editor Lookup favors specific class over superclass (match on specific class)', function () {
-		let d1 = new EditorDescriptor(MyEditor, 'id1', 'name');
-		let d2 = new EditorDescriptor(MyOtherEditor, 'id2', 'name');
+		let d1 = EditorDescriptor.create(MyEditor, 'id1', 'name');
 
-		let oldEditors = EditorRegistry.getEditors();
-		(<any>EditorRegistry).setEditors([]);
+		const disposable = EditorRegistry.registerEditor(d1, [new SyncDescriptor(MyResourceEditorInput)]);
 
-		EditorRegistry.registerEditor(d2, new SyncDescriptor(ResourceEditorInput));
-		EditorRegistry.registerEditor(d1, new SyncDescriptor(MyResourceInput));
+		let inst = workbenchInstantiationService();
 
-		let inst = new TestInstantiationService();
-
-		const editor = EditorRegistry.getEditor(inst.createInstance(MyResourceInput, 'fake', '', URI.file('/fake'))).instantiate(inst);
+		const editor = EditorRegistry.getEditor(inst.createInstance(MyResourceEditorInput, 'fake', '', URI.file('/fake'), undefined))!.instantiate(inst);
 		assert.strictEqual(editor.getId(), 'myEditor');
 
-		const otherEditor = EditorRegistry.getEditor(inst.createInstance(ResourceEditorInput, 'fake', '', URI.file('/fake'))).instantiate(inst);
-		assert.strictEqual(otherEditor.getId(), 'myOtherEditor');
+		const otherEditor = EditorRegistry.getEditor(inst.createInstance(ResourceEditorInput, 'fake', '', URI.file('/fake'), undefined))!.instantiate(inst);
+		assert.strictEqual(otherEditor.getId(), 'workbench.editors.textResourceEditor');
 
-		(<any>EditorRegistry).setEditors(oldEditors);
+		disposable.dispose();
 	});
 
 	test('Editor Lookup favors specific class over superclass (match on super class)', function () {
-		let d1 = new EditorDescriptor(MyOtherEditor, 'id1', 'name');
+		let inst = workbenchInstantiationService();
 
-		let oldEditors = EditorRegistry.getEditors();
-		(<any>EditorRegistry).setEditors([]);
-
-		EditorRegistry.registerEditor(d1, new SyncDescriptor(ResourceEditorInput));
-
-		let inst = new TestInstantiationService();
-
-		const editor = EditorRegistry.getEditor(inst.createInstance(MyResourceInput, 'fake', '', URI.file('/fake'))).instantiate(inst);
-		assert.strictEqual('myOtherEditor', editor.getId());
-
-		(<any>EditorRegistry).setEditors(oldEditors);
+		const editor = EditorRegistry.getEditor(inst.createInstance(MyResourceEditorInput, 'fake', '', URI.file('/fake'), undefined))!.instantiate(inst);
+		assert.strictEqual('workbench.editors.textResourceEditor', editor.getId());
 	});
 
 	test('Editor Input Factory', function () {
-		EditorInputRegistry.setInstantiationService(workbenchInstantiationService());
-		EditorInputRegistry.registerEditorInputFactory('myInputId', MyInputFactory);
+		workbenchInstantiationService().invokeFunction(accessor => EditorInputRegistry.start(accessor));
+		const disposable = EditorInputRegistry.registerEditorInputFactory('myInputId', MyInputFactory);
 
 		let factory = EditorInputRegistry.getEditorInputFactory('myInputId');
 		assert(factory);
+
+		disposable.dispose();
 	});
 
 	test('EditorMemento - basics', function () {
-		const testGroup0 = new TestEditorGroup(0);
-		const testGroup1 = new TestEditorGroup(1);
-		const testGroup4 = new TestEditorGroup(4);
+		const testGroup0 = new TestEditorGroupView(0);
+		const testGroup1 = new TestEditorGroupView(1);
+		const testGroup4 = new TestEditorGroupView(4);
 
 		const editorGroupService = new TestEditorGroupsService([
 			testGroup0,
 			testGroup1,
-			new TestEditorGroup(2)
+			new TestEditorGroupView(2)
 		]);
 
 		interface TestViewState {
@@ -208,76 +202,103 @@ suite('Workbench base editor', () => {
 		const rawMemento = Object.create(null);
 		let memento = new EditorMemento<TestViewState>('id', 'key', rawMemento, 3, editorGroupService);
 
-		let res = memento.loadState(testGroup0, URI.file('/A'));
+		let res = memento.loadEditorState(testGroup0, URI.file('/A'));
 		assert.ok(!res);
 
-		memento.saveState(testGroup0, URI.file('/A'), { line: 3 });
-		res = memento.loadState(testGroup0, URI.file('/A'));
+		memento.saveEditorState(testGroup0, URI.file('/A'), { line: 3 });
+		res = memento.loadEditorState(testGroup0, URI.file('/A'));
 		assert.ok(res);
-		assert.equal(res.line, 3);
+		assert.equal(res!.line, 3);
 
-		memento.saveState(testGroup1, URI.file('/A'), { line: 5 });
-		res = memento.loadState(testGroup1, URI.file('/A'));
+		memento.saveEditorState(testGroup1, URI.file('/A'), { line: 5 });
+		res = memento.loadEditorState(testGroup1, URI.file('/A'));
 		assert.ok(res);
-		assert.equal(res.line, 5);
+		assert.equal(res!.line, 5);
 
 		// Ensure capped at 3 elements
-		memento.saveState(testGroup0, URI.file('/B'), { line: 1 });
-		memento.saveState(testGroup0, URI.file('/C'), { line: 1 });
-		memento.saveState(testGroup0, URI.file('/D'), { line: 1 });
-		memento.saveState(testGroup0, URI.file('/E'), { line: 1 });
+		memento.saveEditorState(testGroup0, URI.file('/B'), { line: 1 });
+		memento.saveEditorState(testGroup0, URI.file('/C'), { line: 1 });
+		memento.saveEditorState(testGroup0, URI.file('/D'), { line: 1 });
+		memento.saveEditorState(testGroup0, URI.file('/E'), { line: 1 });
 
-		assert.ok(!memento.loadState(testGroup0, URI.file('/A')));
-		assert.ok(!memento.loadState(testGroup0, URI.file('/B')));
-		assert.ok(memento.loadState(testGroup0, URI.file('/C')));
-		assert.ok(memento.loadState(testGroup0, URI.file('/D')));
-		assert.ok(memento.loadState(testGroup0, URI.file('/E')));
+		assert.ok(!memento.loadEditorState(testGroup0, URI.file('/A')));
+		assert.ok(!memento.loadEditorState(testGroup0, URI.file('/B')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/C')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/D')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/E')));
 
 		// Save at an unknown group
-		memento.saveState(testGroup4, URI.file('/E'), { line: 1 });
-		assert.ok(memento.loadState(testGroup4, URI.file('/E'))); // only gets removed when memento is saved
-		memento.saveState(testGroup4, URI.file('/C'), { line: 1 });
-		assert.ok(memento.loadState(testGroup4, URI.file('/C'))); // only gets removed when memento is saved
+		memento.saveEditorState(testGroup4, URI.file('/E'), { line: 1 });
+		assert.ok(memento.loadEditorState(testGroup4, URI.file('/E'))); // only gets removed when memento is saved
+		memento.saveEditorState(testGroup4, URI.file('/C'), { line: 1 });
+		assert.ok(memento.loadEditorState(testGroup4, URI.file('/C'))); // only gets removed when memento is saved
 
-		memento.shutdown();
+		memento.saveState();
 
 		memento = new EditorMemento('id', 'key', rawMemento, 3, editorGroupService);
-		assert.ok(memento.loadState(testGroup0, URI.file('/C')));
-		assert.ok(memento.loadState(testGroup0, URI.file('/D')));
-		assert.ok(memento.loadState(testGroup0, URI.file('/E')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/C')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/D')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/E')));
 
 		// Check on entries no longer there from invalid groups
-		assert.ok(!memento.loadState(testGroup4, URI.file('/E')));
-		assert.ok(!memento.loadState(testGroup4, URI.file('/C')));
+		assert.ok(!memento.loadEditorState(testGroup4, URI.file('/E')));
+		assert.ok(!memento.loadEditorState(testGroup4, URI.file('/C')));
 
-		memento.clearState(URI.file('/C'));
-		memento.clearState(URI.file('/E'));
+		memento.clearEditorState(URI.file('/C'), testGroup4);
+		memento.clearEditorState(URI.file('/E'));
 
-		assert.ok(!memento.loadState(testGroup0, URI.file('/C')));
-		assert.ok(memento.loadState(testGroup0, URI.file('/D')));
-		assert.ok(!memento.loadState(testGroup0, URI.file('/E')));
+		assert.ok(!memento.loadEditorState(testGroup4, URI.file('/C')));
+		assert.ok(memento.loadEditorState(testGroup0, URI.file('/D')));
+		assert.ok(!memento.loadEditorState(testGroup0, URI.file('/E')));
+	});
+
+	test('EditorMemento - move', function () {
+		const testGroup0 = new TestEditorGroupView(0);
+
+		const editorGroupService = new TestEditorGroupsService([testGroup0]);
+
+		interface TestViewState { line: number; }
+
+		const rawMemento = Object.create(null);
+		let memento = new EditorMemento<TestViewState>('id', 'key', rawMemento, 3, editorGroupService);
+
+		memento.saveEditorState(testGroup0, URI.file('/some/folder/file-1.txt'), { line: 1 });
+		memento.saveEditorState(testGroup0, URI.file('/some/folder/file-2.txt'), { line: 2 });
+		memento.saveEditorState(testGroup0, URI.file('/some/other/file.txt'), { line: 3 });
+
+		memento.moveEditorState(URI.file('/some/folder/file-1.txt'), URI.file('/some/folder/file-moved.txt'));
+
+		let res = memento.loadEditorState(testGroup0, URI.file('/some/folder/file-1.txt'));
+		assert.ok(!res);
+
+		res = memento.loadEditorState(testGroup0, URI.file('/some/folder/file-moved.txt'));
+		assert.equal(res?.line, 1);
+
+		memento.moveEditorState(URI.file('/some/folder'), URI.file('/some/folder-moved'));
+
+		res = memento.loadEditorState(testGroup0, URI.file('/some/folder-moved/file-moved.txt'));
+		assert.equal(res?.line, 1);
+
+		res = memento.loadEditorState(testGroup0, URI.file('/some/folder-moved/file-2.txt'));
+		assert.equal(res?.line, 2);
 	});
 
 	test('EditoMemento - use with editor input', function () {
-		const testGroup0 = new TestEditorGroup(0);
+		const testGroup0 = new TestEditorGroupView(0);
 
 		interface TestViewState {
 			line: number;
 		}
 
 		class TestEditorInput extends EditorInput {
-			constructor(private resource: URI, private id = 'testEditorInput') {
+			constructor(public resource: URI, private id = 'testEditorInputForMementoTest') {
 				super();
 			}
-			public getTypeId() { return 'testEditorInput'; }
-			public resolve(): TPromise<IEditorModel> { return null; }
+			getTypeId() { return 'testEditorInputForMementoTest'; }
+			resolve(): Promise<IEditorModel> { return Promise.resolve(null!); }
 
-			public matches(other: TestEditorInput): boolean {
+			matches(other: TestEditorInput): boolean {
 				return other && this.id === other.id && other instanceof TestEditorInput;
-			}
-
-			public getResource(): URI {
-				return this.resource;
 			}
 		}
 
@@ -286,17 +307,17 @@ suite('Workbench base editor', () => {
 
 		const testInputA = new TestEditorInput(URI.file('/A'));
 
-		let res = memento.loadState(testGroup0, testInputA);
+		let res = memento.loadEditorState(testGroup0, testInputA);
 		assert.ok(!res);
 
-		memento.saveState(testGroup0, testInputA, { line: 3 });
-		res = memento.loadState(testGroup0, testInputA);
+		memento.saveEditorState(testGroup0, testInputA, { line: 3 });
+		res = memento.loadEditorState(testGroup0, testInputA);
 		assert.ok(res);
-		assert.equal(res.line, 3);
+		assert.equal(res!.line, 3);
 
 		// State removed when input gets disposed
 		testInputA.dispose();
-		res = memento.loadState(testGroup0, testInputA);
+		res = memento.loadEditorState(testGroup0, testInputA);
 		assert.ok(!res);
 	});
 

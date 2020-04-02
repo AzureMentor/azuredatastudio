@@ -3,21 +3,14 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
-import { range } from 'vs/base/common/arrays';
-
 export interface IRowNumberColumnOptions {
 	numberOfRows: number;
 	cssClass?: string;
 }
 
-const sizePerDigit = 15;
-
 export class RowNumberColumn<T> implements Slick.Plugin<T> {
 	private handler = new Slick.EventHandler();
-	private grid: Slick.Grid<T>;
-
+	private grid!: Slick.Grid<T>;
 
 	constructor(private options: IRowNumberColumnOptions) {
 	}
@@ -25,8 +18,8 @@ export class RowNumberColumn<T> implements Slick.Plugin<T> {
 	public init(grid: Slick.Grid<T>) {
 		this.grid = grid;
 		this.handler
-			.subscribe(this.grid.onClick, (e, args) => this.handleClick(e, args))
-			.subscribe(this.grid.onHeaderClick, (e, args) => this.handleHeaderClick(e, args));
+			.subscribe(this.grid.onClick, (e: DOMEvent, args: Slick.OnClickEventArgs<T>) => this.handleClick(e as MouseEvent, args))
+			.subscribe(this.grid.onHeaderClick, (e: DOMEvent, args: Slick.OnHeaderClickEventArgs<T>) => this.handleHeaderClick(e as MouseEvent, args));
 	}
 
 	public destroy() {
@@ -45,36 +38,30 @@ export class RowNumberColumn<T> implements Slick.Plugin<T> {
 	private handleHeaderClick(e: MouseEvent, args: Slick.OnHeaderClickEventArgs<T>): void {
 		if (args.column.id === 'rowNumber') {
 			this.grid.setActiveCell(0, 1);
-			if (this.grid.getSelectionModel()) {
-				this.grid.setSelectedRows(range(this.grid.getDataLength()));
+			let selectionModel = this.grid.getSelectionModel();
+			if (selectionModel) {
+				selectionModel.setSelectedRanges([new Slick.Range(0, 0, this.grid.getDataLength() - 1, this.grid.getColumns().length - 1)]);
 			}
 		}
 	}
 
 	public getColumnDefinition(): Slick.Column<T> {
 		// that smallest we can make it is 22 due to padding and margins in the cells
-		let columnWidth = Math.max(this.options.numberOfRows.toString().length * sizePerDigit, 22);
 		return {
 			id: 'rowNumber',
 			name: '',
 			field: 'rowNumber',
-			width: columnWidth,
-			minWidth: columnWidth,
-			maxWidth: columnWidth,
-			resizable: false,
+			width: 22,
+			resizable: true,
 			cssClass: this.options.cssClass,
 			focusable: false,
 			selectable: false,
-			formatter: (r, c, v, cd, dc) => this.formatter(r, c, v, cd, dc)
+			formatter: r => this.formatter(r)
 		};
 	}
 
-	private formatter(row, cell, value, columnDef: Slick.Column<T>, dataContext): string {
-		if (dataContext) {
-			// row is zero-based, we need make it 1 based for display in the result grid
-			//
-			return `<span>${row + 1}</span>`;
-		}
-		return null;
+	private formatter(row: number): string {
+		// row is zero-based, we need make it 1 based for display in the result grid
+		return `<span>${row + 1}</span>`;
 	}
 }

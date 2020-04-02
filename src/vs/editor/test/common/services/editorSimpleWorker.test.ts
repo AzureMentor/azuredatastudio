@@ -2,15 +2,15 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as assert from 'assert';
-import { EditorSimpleWorkerImpl, ICommonModel } from 'vs/editor/common/services/editorSimpleWorker';
 import { Range } from 'vs/editor/common/core/range';
+import { EditorSimpleWorker, ICommonModel } from 'vs/editor/common/services/editorSimpleWorker';
+import { EditorWorkerHost } from 'vs/editor/common/services/editorWorkerServiceImpl';
 
 suite('EditorSimpleWorker', () => {
 
-	class WorkerWithModels extends EditorSimpleWorkerImpl {
+	class WorkerWithModels extends EditorSimpleWorker {
 
 		getModel(uri: string) {
 			return this._getModel(uri);
@@ -32,7 +32,7 @@ suite('EditorSimpleWorker', () => {
 	let model: ICommonModel;
 
 	setup(() => {
-		worker = new WorkerWithModels(null);
+		worker = new WorkerWithModels(<EditorWorkerHost>null!, null);
 		model = worker.addModel([
 			'This is line one', //16
 			'and this is line number two', //27
@@ -52,7 +52,7 @@ suite('EditorSimpleWorker', () => {
 		assert.equal(actual, offset);
 	}
 
-	test('ICommonModel#offsetAt', function () {
+	test('ICommonModel#offsetAt', () => {
 		assertOffsetAt(1, 1, 0);
 		assertOffsetAt(1, 2, 1);
 		assertOffsetAt(1, 17, 16);
@@ -67,7 +67,7 @@ suite('EditorSimpleWorker', () => {
 		assertOffsetAt(Number.MAX_VALUE, Number.MAX_VALUE, 95);
 	});
 
-	test('ICommonModel#positionAt', function () {
+	test('ICommonModel#positionAt', () => {
 		assertPositionAt(0, 1, 1);
 		assertPositionAt(Number.MIN_VALUE, 1, 1);
 		assertPositionAt(1, 1, 2);
@@ -86,7 +86,7 @@ suite('EditorSimpleWorker', () => {
 		assert.equal(model.offsetAt({ lineNumber: 1, column: 2 }), 1);
 	});
 
-	test('MoreMinimal', function () {
+	test('MoreMinimal', () => {
 
 		return worker.computeMoreMinimalEdits(model.uri.toString(), [{ text: 'This is line One', range: new Range(1, 1, 1, 17) }]).then(edits => {
 			assert.equal(edits.length, 1);
@@ -163,9 +163,12 @@ suite('EditorSimpleWorker', () => {
 		]);
 
 		return worker.textualSuggest(model.uri.toString(), { lineNumber: 2, column: 2 }, '[a-z]+', 'img').then((result) => {
-			const { suggestions } = result;
-			assert.equal(suggestions.length, 1);
-			assert.equal(suggestions[0].label, 'foobar');
+			if (!result) {
+				assert.ok(false);
+				return;
+			}
+			assert.equal(result.length, 1);
+			assert.equal(result, 'foobar');
 		});
 	});
 
@@ -181,11 +184,7 @@ suite('EditorSimpleWorker', () => {
 			'and now we are done'
 		]);
 
-		let words: string[] = [];
-
-		for (let iter = model.createWordIterator(/[a-z]+/img), e = iter.next(); !e.done; e = iter.next()) {
-			words.push(e.value);
-		}
+		let words: string[] = [...model.words(/[a-z]+/img)];
 
 		assert.deepEqual(words, ['one', 'line', 'two', 'line', 'past', 'empty', 'single', 'and', 'now', 'we', 'are', 'done']);
 	});

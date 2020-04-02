@@ -3,22 +3,19 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
-import { range } from 'vs/base/common/arrays';
 
 /**
  * Implements the various additional navigation  keybindings we want out of slickgrid
  */
 export class AdditionalKeyBindings<T> implements Slick.Plugin<T> {
-	private grid: Slick.Grid<T>;
+	private grid!: Slick.Grid<T>;
 	private handler = new Slick.EventHandler();
 
 	public init(grid: Slick.Grid<T>) {
 		this.grid = grid;
-		this.handler.subscribe(this.grid.onKeyDown, (e, args) => this.handleKeyDown(e, args));
+		this.handler.subscribe(this.grid.onKeyDown, (e: DOMEvent, args) => this.handleKeyDown(e as KeyboardEvent, args));
 	}
 
 	public destroy() {
@@ -56,8 +53,6 @@ export class AdditionalKeyBindings<T> implements Slick.Plugin<T> {
 			let selectionModel = this.grid.getSelectionModel();
 			if (selectionModel) {
 				selectionModel.setSelectedRanges([new Slick.Range(0, 0, this.grid.getDataLength() - 1, this.grid.getColumns().length - 1)]);
-			} else {
-				this.grid.setSelectedRows(range(this.grid.getDataLength()));
 			}
 		} else {
 			handled = false;

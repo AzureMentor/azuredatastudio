@@ -2,21 +2,21 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as nls from 'vscode-nls';
 import * as vscode from 'vscode';
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 import { AgentUtils } from '../agentUtils';
 import { IAgentDialogData, AgentDialogMode } from '../interfaces';
+import { JobData } from './jobData';
 
 const localize = nls.loadMessageBundle();
 
 export class AlertData implements IAgentDialogData {
-	public static readonly AlertTypeSqlServerEventString: string = localize('alertData.DefaultAlertTypString', 'SQL Server event alert');
-	public static readonly AlertTypePerformanceConditionString: string = localize('alertDialog.PerformanceCondition', 'SQL Server performance condition alert');
-	public static readonly AlertTypeWmiEventString: string = localize('alertDialog.WmiEvent', 'WMI event alert');
-	public static readonly DefaultAlertTypeString: string =  AlertData.AlertTypeSqlServerEventString;
+	public static readonly AlertTypeSqlServerEventString: string = localize('alertData.DefaultAlertTypString', "SQL Server event alert");
+	public static readonly AlertTypePerformanceConditionString: string = localize('alertDialog.PerformanceCondition', "SQL Server performance condition alert");
+	public static readonly AlertTypeWmiEventString: string = localize('alertDialog.WmiEvent', "WMI event alert");
+	public static readonly DefaultAlertTypeString: string = AlertData.AlertTypeSqlServerEventString;
 
 	ownerUri: string;
 	dialogMode: AgentDialogMode = AgentDialogMode.CREATE;
@@ -45,8 +45,19 @@ export class AlertData implements IAgentDialogData {
 	wmiEventNamespace: string;
 	wmiEventQuery: string;
 
-	constructor(ownerUri:string, alertInfo: sqlops.AgentAlertInfo) {
+	private viaJobDialog: boolean;
+	private jobModel: JobData;
+
+	constructor(
+		ownerUri: string,
+		alertInfo: azdata.AgentAlertInfo,
+		jobModel?: JobData,
+		viaJobDialog: boolean = false
+	) {
 		this.ownerUri = ownerUri;
+		this.viaJobDialog = viaJobDialog;
+		this.jobModel = jobModel;
+		this.jobName = this.jobName ? this.jobName : this.jobModel.name;
 
 		if (alertInfo) {
 			this.dialogMode = AgentDialogMode.EDIT;
@@ -57,10 +68,9 @@ export class AlertData implements IAgentDialogData {
 			this.eventDescriptionKeyword = alertInfo.eventDescriptionKeyword;
 			this.eventSource = alertInfo.eventSource;
 			this.hasNotification = alertInfo.hasNotification;
-			this.includeEventDescription = alertInfo.includeEventDescription.toString();
+			this.includeEventDescription = alertInfo.includeEventDescription ? alertInfo.includeEventDescription.toString() : null;
 			this.isEnabled = alertInfo.isEnabled;
 			this.jobId = alertInfo.jobId;
-			this.jobName = alertInfo.jobName;
 			this.lastOccurrenceDate = alertInfo.lastOccurrenceDate;
 			this.lastResponseDate = alertInfo.lastResponseDate;
 			this.messageId = alertInfo.messageId;
@@ -71,7 +81,7 @@ export class AlertData implements IAgentDialogData {
 			this.databaseName = alertInfo.databaseName;
 			this.countResetDate = alertInfo.countResetDate;
 			this.categoryName = alertInfo.categoryName;
-			this.alertType = alertInfo.alertType.toString();
+			this.alertType = alertInfo.alertType ? alertInfo.alertType.toString() : null;
 			this.wmiEventNamespace = alertInfo.wmiEventNamespace;
 			this.wmiEventQuery = alertInfo.wmiEventQuery;
 		}
@@ -82,17 +92,25 @@ export class AlertData implements IAgentDialogData {
 
 	public async save() {
 		let agentService = await AgentUtils.getAgentService();
-		let result = this.dialogMode === AgentDialogMode.CREATE
-			? await agentService.createAlert(this.ownerUri,  this.toAgentAlertInfo())
-			: await agentService.updateAlert(this.ownerUri, this.originalName, this.toAgentAlertInfo());
-
+		let result: any;
+		// if it's called via the job dialog, add it to the
+		// job model
+		if (this.viaJobDialog) {
+			if (this.jobModel) {
+				Promise.resolve(this);
+				return;
+			}
+		} else {
+			// has to be a create alert
+			result = await agentService.createAlert(this.ownerUri, this.toAgentAlertInfo());
+		}
 		if (!result || !result.success) {
 			vscode.window.showErrorMessage(
 				localize('alertData.saveErrorMessage', "Alert update failed '{0}'", result.errorMessage ? result.errorMessage : 'Unknown'));
 		}
 	}
 
-	public toAgentAlertInfo(): sqlops.AgentAlertInfo {
+	public toAgentAlertInfo(): azdata.AgentAlertInfo {
 		return {
 			id: this.id,
 			name: this.name,
@@ -100,7 +118,7 @@ export class AlertData implements IAgentDialogData {
 			eventDescriptionKeyword: this.eventDescriptionKeyword,
 			eventSource: this.eventSource,
 			hasNotification: this.hasNotification,
-			includeEventDescription: sqlops.NotifyMethods.none, // this.includeEventDescription,
+			includeEventDescription: azdata.NotifyMethods.none, // this.includeEventDescription,
 			isEnabled: this.isEnabled,
 			jobId: this.jobId,
 			jobName: this.jobName,
@@ -120,13 +138,13 @@ export class AlertData implements IAgentDialogData {
 		};
 	}
 
-	private static getAlertTypeFromString(alertTypeString: string): sqlops.AlertType {
+	private static getAlertTypeFromString(alertTypeString: string): azdata.AlertType {
 		if (alertTypeString === AlertData.AlertTypePerformanceConditionString) {
-			return sqlops.AlertType.sqlServerPerformanceCondition;
+			return azdata.AlertType.sqlServerPerformanceCondition;
 		} else if (alertTypeString === AlertData.AlertTypeWmiEventString) {
-			return sqlops.AlertType.wmiEvent;
+			return azdata.AlertType.wmiEvent;
 		} else {
-			return sqlops.AlertType.sqlServerEvent;
+			return azdata.AlertType.sqlServerEvent;
 		}
 	}
 }

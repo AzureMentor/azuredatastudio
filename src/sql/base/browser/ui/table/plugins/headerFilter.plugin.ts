@@ -1,58 +1,65 @@
 // Adopted and converted to typescript from https://github.com/danny-sg/slickgrid-spreadsheet-plugins/blob/master/ext.headerfilter.js
 // heavily modified
-import 'vs/css!sql/base/browser/ui/table/media/table';
 
-import { mixin } from 'vs/base/common/objects';
-import { SlickGrid } from 'angular2-slickgrid';
-import { Button } from '../../button/button';
-import { attachButtonStyler } from 'sql/common/theme/styler';
+import { IButtonStyles } from 'vs/base/browser/ui/button/button';
+import { localize } from 'vs/nls';
+
+import { Button } from 'sql/base/browser/ui/button/button';
 import { escape } from 'sql/base/common/strings';
-import { IThemeService } from 'vs/platform/theme/common/themeService';
+import { addDisposableListener } from 'vs/base/browser/dom';
+import { DisposableStore } from 'vs/base/common/lifecycle';
+import { withNullAsUndefined } from 'vs/base/common/types';
 
-export class HeaderFilter {
+interface IExtendedColumn<T> extends Slick.Column<T> {
+	filterValues?: Array<string>;
+}
+
+export class HeaderFilter<T extends Slick.SlickData> {
 
 	public onFilterApplied = new Slick.Event();
 	public onCommand = new Slick.Event();
 
-	private grid;
+	private grid!: Slick.Grid<T>;
 	private handler = new Slick.EventHandler();
-	private defaults = {
-		filterImage: 'src/sql/media/icons/filter.svg',
-		sortAscImage: 'sort-asc.gif',
-		sortDescImage: 'sort-desc.gif'
-	};
 
-	private $menu;
-	private options: any;
-	private okButton: Button;
-	private clearButton: Button;
-	private cancelButton: Button;
-	private workingFilters: any;
-	private columnDef: any;
+	private $menu?: JQuery<HTMLElement>;
+	private okButton?: Button;
+	private clearButton?: Button;
+	private cancelButton?: Button;
+	private workingFilters!: Array<string>;
+	private columnDef!: IExtendedColumn<T>;
+	private buttonStyles?: IButtonStyles;
 
-	constructor(options: any, private _themeService: IThemeService) {
-		this.options = mixin(options, this.defaults, false);
-	}
+	private disposableStore = new DisposableStore();
 
-	public init(grid: Slick.Grid<any>): void {
+	public init(grid: Slick.Grid<T>): void {
 		this.grid = grid;
-		this.handler.subscribe(this.grid.onHeaderCellRendered, (e, args) => this.handleHeaderCellRendered(e , args))
-				.subscribe(this.grid.onBeforeHeaderCellDestroy, (e, args) => this.handleBeforeHeaderCellDestroy(e, args))
-				.subscribe(this.grid.onClick, (e) => this.handleBodyMouseDown)
-				.subscribe(this.grid.onColumnsResized, () => this.columnsResized());
-
+		this.handler.subscribe(this.grid.onHeaderCellRendered, (e: Event, args: Slick.OnHeaderCellRenderedEventArgs<T>) => this.handleHeaderCellRendered(e, args))
+			.subscribe(this.grid.onBeforeHeaderCellDestroy, (e: Event, args: Slick.OnBeforeHeaderCellDestroyEventArgs<T>) => this.handleBeforeHeaderCellDestroy(e, args))
+			.subscribe(this.grid.onClick, (e: DOMEvent) => this.handleBodyMouseDown(e as MouseEvent))
+			.subscribe(this.grid.onColumnsResized, () => this.columnsResized())
+			.subscribe(this.grid.onKeyDown, (e: DOMEvent) => this.handleKeyDown(e as KeyboardEvent));
 		this.grid.setColumns(this.grid.getColumns());
 
-		$(document.body).bind('mousedown', this.handleBodyMouseDown);
+		this.disposableStore.add(addDisposableListener(document.body, 'mousedown', e => this.handleBodyMouseDown(e)));
+		this.disposableStore.add(addDisposableListener(document.body, 'keydown', e => this.handleKeyDown(e)));
 	}
 
 	public destroy() {
 		this.handler.unsubscribeAll();
-		$(document.body).unbind('mousedown', this.handleBodyMouseDown);
+		this.disposableStore.dispose();
 	}
 
-	private handleBodyMouseDown = (e) => {
-		if (this.$menu && this.$menu[0] !== e.target && !$.contains(this.$menu[0], e.target)) {
+	private handleKeyDown(e: KeyboardEvent): void {
+		if (this.$menu && (e.key === 'Escape' || e.keyCode === 27)) {
+			this.hideMenu();
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	}
+
+	private handleBodyMouseDown(e: MouseEvent): void {
+		if (this.$menu && this.$menu[0] !== e.target && !jQuery.contains(this.$menu[0], e.target as Element)) {
 			this.hideMenu();
 			e.preventDefault();
 			e.stopPropagation();
@@ -62,37 +69,42 @@ export class HeaderFilter {
 	private hideMenu() {
 		if (this.$menu) {
 			this.$menu.remove();
-			this.$menu = null;
+			this.$menu = undefined;
 		}
 	}
 
-	private handleHeaderCellRendered(e, args) {
-		let column = args.column;
+	private handleHeaderCellRendered(e: Event, args: Slick.OnHeaderCellRenderedEventArgs<T>) {
+		const column = args.column;
 		if (column.id === '_detail_selector') {
 			return;
 		}
-		let $el = $('<div></div>')
+		const $el = jQuery('<div tabIndex="0"></div>')
 			.addClass('slick-header-menubutton')
 			.data('column', column);
 
-		$el.bind('click', (e) => this.showFilter(e)).appendTo(args.node);
+		$el.bind('click', (e: KeyboardEvent) => this.showFilter(e)).appendTo(args.node);
+		$el.bind('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.keyCode === 13) {
+				this.showFilter(e);
+			}
+		}).appendTo(args.node);
 	}
 
-	private handleBeforeHeaderCellDestroy(e, args) {
-		$(args.node)
+	private handleBeforeHeaderCellDestroy(e: Event, args: Slick.OnBeforeHeaderCellDestroyEventArgs<T>) {
+		jQuery(args.node)
 			.find('.slick-header-menubutton')
 			.remove();
 	}
 
-	private addMenuItem(menu, columnDef, title, command, image) {
-		let $item = $('<div class="slick-header-menuitem">')
-						.data('command', command)
-						.data('column', columnDef)
-						.bind('click', (e) => this.handleMenuItemClick(e, command, columnDef))
-						.appendTo(menu);
+	private addMenuItem(menu: JQuery<HTMLElement>, columnDef: Slick.Column<T>, title: string, command: string) {
+		const $item = jQuery('<div class="slick-header-menuitem">')
+			.data('command', command)
+			.data('column', columnDef)
+			.bind('click', (e) => this.handleMenuItemClick(e, command, columnDef))
+			.appendTo(menu);
 
-		let $icon = $('<div class="slick-header-menuicon">')
-						.appendTo($item);
+		const $icon = jQuery('<div class="slick-header-menuicon">')
+			.appendTo($item);
 
 		if (title === 'Sort Ascending') {
 			$icon.get(0).className += ' ascending';
@@ -100,23 +112,23 @@ export class HeaderFilter {
 			$icon.get(0).className += ' descending';
 		}
 
-		$('<span class="slick-header-menucontent">')
+		jQuery('<span class="slick-header-menucontent">')
 			.text(title)
 			.appendTo($item);
 	}
 
-	private addMenuInput(menu, columnDef) {
+	private addMenuInput(menu: JQuery<HTMLElement>, columnDef: Slick.Column<T>) {
 		const self = this;
-		$('<input class="input" placeholder="Search" style="margin-top: 5px; width: 206px">')
+		jQuery('<input class="input" placeholder="Search" style="margin-top: 5px; width: 206px">')
 			.data('column', columnDef)
 			.bind('keyup', (e) => {
-				let filterVals = this.getFilterValuesByInput($(e.target));
+				const filterVals = this.getFilterValuesByInput(jQuery(e.target));
 				self.updateFilterInputs(menu, columnDef, filterVals);
 			})
 			.appendTo(menu);
 	}
 
-	private updateFilterInputs(menu, columnDef, filterItems) {
+	private updateFilterInputs(menu: JQuery<HTMLElement>, columnDef: IExtendedColumn<T>, filterItems: Array<string>) {
 		let filterOptions = '<label><input type="checkbox" value="-1" />(Select All)</label>';
 		columnDef.filterValues = columnDef.filterValues || [];
 
@@ -124,22 +136,23 @@ export class HeaderFilter {
 		this.workingFilters = columnDef.filterValues.slice(0);
 
 		for (let i = 0; i < filterItems.length; i++) {
-			let filtered = _.contains(this.workingFilters, filterItems[i]);
+			const filtered = this.workingFilters.some(x => x === filterItems[i]);
 
 			filterOptions += '<label><input type="checkbox" value="' + i + '"'
-			+ (filtered ? ' checked="checked"' : '')
-			+ '/>' + filterItems[i] + '</label>';
+				+ (filtered ? ' checked="checked"' : '')
+				+ '/>' + filterItems[i] + '</label>';
 		}
-		let $filter = menu.find('.filter');
-		$filter.empty().append($(filterOptions));
+		const $filter = menu.find('.filter');
+		$filter.empty().append(jQuery(filterOptions));
 
-		$(':checkbox', $filter).bind('click', (e) => {
-			this.workingFilters = this.changeWorkingFilter(filterItems, this.workingFilters, $(e.target));
+		jQuery(':checkbox', $filter).bind('click', (e) => {
+			this.workingFilters = this.changeWorkingFilter(filterItems, this.workingFilters, jQuery(e.target));
 		});
 	}
 
-	private showFilter(e) {
-		let $menuButton = $(e.target);
+	private showFilter(e: KeyboardEvent) {
+		const target = withNullAsUndefined(e.target);
+		const $menuButton = jQuery(target);
 		this.columnDef = $menuButton.data('column');
 
 		this.columnDef.filterValues = this.columnDef.filterValues || [];
@@ -147,46 +160,46 @@ export class HeaderFilter {
 		// WorkingFilters is a copy of the filters to enable apply/cancel behaviour
 		this.workingFilters = this.columnDef.filterValues.slice(0);
 
-		let filterItems;
+		let filterItems: Array<string>;
 
 		if (this.workingFilters.length === 0) {
 			// Filter based all available values
-			filterItems = this.getFilterValues(this.grid.getData(), this.columnDef);
+			filterItems = this.getFilterValues(this.grid.getData() as Slick.DataProvider<T>, this.columnDef);
 		}
 		else {
 			// Filter based on current dataView subset
-			filterItems = this.getAllFilterValues(this.grid.getData().getItems(), this.columnDef);
+			filterItems = this.getAllFilterValues((this.grid.getData() as Slick.DataProvider<T>).getItems(), this.columnDef);
 		}
 
 		if (!this.$menu) {
-			this.$menu = $('<div class="slick-header-menu">').appendTo(document.body);
+			this.$menu = jQuery('<div class="slick-header-menu">').appendTo(document.body);
 		}
 
 		this.$menu.empty();
 
-		this.addMenuItem(this.$menu, this.columnDef, 'Sort Ascending', 'sort-asc', this.options.sortAscImage);
-		this.addMenuItem(this.$menu, this.columnDef, 'Sort Descending', 'sort-desc', this.options.sortDescImage);
+		this.addMenuItem(this.$menu, this.columnDef, 'Sort Ascending', 'sort-asc');
+		this.addMenuItem(this.$menu, this.columnDef, 'Sort Descending', 'sort-desc');
 		this.addMenuInput(this.$menu, this.columnDef);
 
 		let filterOptions = '<label><input type="checkbox" value="-1" />(Select All)</label>';
 
 		for (let i = 0; i < filterItems.length; i++) {
-			let filtered = _.contains(this.workingFilters, filterItems[i]);
+			const filtered = this.workingFilters.some(x => x === filterItems[i]);
 			if (filterItems[i] && filterItems[i].indexOf('Error:') < 0) {
 				filterOptions += '<label><input type="checkbox" value="' + i + '"'
-				+ (filtered ? ' checked="checked"' : '')
-				+ '/>' + escape(filterItems[i]) + '</label>';
+					+ (filtered ? ' checked="checked"' : '')
+					+ '/>' + escape(filterItems[i]) + '</label>';
 			}
 		}
-		let $filter = $('<div class="filter">')
-						.append($(filterOptions))
-						.appendTo(this.$menu);
+		const $filter = jQuery('<div class="filter">')
+			.append(jQuery(filterOptions))
+			.appendTo(this.$menu);
 
 		this.okButton = new Button(this.$menu.get(0));
-		this.okButton.label = 'OK';
-		this.okButton.title = 'OK';
+		this.okButton.label = localize('headerFilter.ok', "OK");
+		this.okButton.title = localize('headerFilter.ok', "OK");
 		this.okButton.element.id = 'filter-ok-button';
-		let okElement = $('#filter-ok-button');
+		const okElement = jQuery('#filter-ok-button');
 		okElement.bind('click', (ev) => {
 			this.columnDef.filterValues = this.workingFilters.splice(0);
 			this.setButtonImage($menuButton, this.columnDef.filterValues.length > 0);
@@ -194,65 +207,86 @@ export class HeaderFilter {
 		});
 
 		this.clearButton = new Button(this.$menu.get(0));
-		this.clearButton.label = 'Clear';
-		this.clearButton.title = 'Clear';
+		this.clearButton.label = localize('headerFilter.clear', "Clear");
+		this.clearButton.title = localize('headerFilter.clear', "Clear");
 		this.clearButton.element.id = 'filter-clear-button';
-		let clearElement = $('#filter-clear-button');
+		const clearElement = jQuery('#filter-clear-button');
 		clearElement.bind('click', (ev) => {
-			this.columnDef.filterValues.length = 0;
+			this.columnDef.filterValues!.length = 0;
 			this.setButtonImage($menuButton, false);
 			this.handleApply(ev, this.columnDef);
 		});
 
 		this.cancelButton = new Button(this.$menu.get(0));
-		this.cancelButton.label = 'Cancel';
-		this.cancelButton.title = 'Cancel';
+		this.cancelButton.label = localize('headerFilter.cancel', "Cancel");
+		this.cancelButton.title = localize('headerFilter.cancel', "Cancel");
 		this.cancelButton.element.id = 'filter-cancel-button';
-		let cancelElement = $('#filter-cancel-button');
+		const cancelElement = jQuery('#filter-cancel-button');
 		cancelElement.bind('click', () => this.hideMenu());
-		attachButtonStyler(this.okButton, this._themeService);
-		attachButtonStyler(this.clearButton, this._themeService);
-		attachButtonStyler(this.cancelButton, this._themeService);
 
-		$(':checkbox', $filter).bind('click', (e) => {
-			this.workingFilters = this.changeWorkingFilter(filterItems, this.workingFilters, $(e.target));
+		this.applyStyles();
+
+		jQuery(':checkbox', $filter).bind('click', (e) => {
+			this.workingFilters = this.changeWorkingFilter(filterItems, this.workingFilters, jQuery(target));
 		});
 
-		let offset = $(e.target).offset();
-		let left = offset.left - this.$menu.width() + $(e.target).width() - 8;
+		const offset = jQuery(target).offset();
+		const left = offset.left - this.$menu.width() + jQuery(target).width() - 8;
 
-		let menutop = offset.top + $(e.target).height();
+		let menutop = offset.top + jQuery(target).height();
 
-		if (menutop + offset.top > $(window).height()) {
-			menutop -= (this.$menu.height() + $(e.target).height() + 8);
+		if (menutop + offset.top > jQuery(window).height()) {
+			menutop -= (this.$menu.height() + jQuery(target).height() + 8);
 		}
 		this.$menu.css('top', menutop)
-				.css('left', (left > 0 ? left : 0));
+			.css('left', (left > 0 ? left : 0));
+	}
+
+	public style(styles: IButtonStyles): void {
+		this.buttonStyles = styles;
+		this.applyStyles();
+	}
+
+	private applyStyles() {
+		if (this.buttonStyles) {
+			const styles = this.buttonStyles;
+			if (this.okButton) {
+				this.okButton.style(styles);
+			}
+
+			if (this.clearButton) {
+				this.clearButton.style(styles);
+			}
+
+			if (this.cancelButton) {
+				this.cancelButton.style(styles);
+			}
+		}
 	}
 
 	private columnsResized() {
 		this.hideMenu();
 	}
 
-	private changeWorkingFilter(filterItems, workingFilters, $checkbox) {
-		let value = $checkbox.val();
-		let $filter = $checkbox.parent().parent();
+	private changeWorkingFilter(filterItems: Array<string>, workingFilters: Array<string>, $checkbox: JQuery<HTMLElement>) {
+		const value = $checkbox.val() as number;
+		const $filter = $checkbox.parent().parent();
 
-		if ($checkbox.val() < 0) {
+		if ($checkbox.val() as number < 0) {
 			// Select All
 			if ($checkbox.prop('checked')) {
-				$(':checkbox', $filter).prop('checked', true);
+				jQuery(':checkbox', $filter).prop('checked', true);
 				workingFilters = filterItems.slice(0);
 			} else {
-				$(':checkbox', $filter).prop('checked', false);
+				jQuery(':checkbox', $filter).prop('checked', false);
 				workingFilters.length = 0;
 			}
 		} else {
-			let index = _.indexOf(workingFilters, filterItems[value]);
+			const index = workingFilters.indexOf(filterItems[value]);
 
 			if ($checkbox.prop('checked') && index < 0) {
 				workingFilters.push(filterItems[value]);
-				let nextRow = filterItems[(parseInt(value)+1).toString()];
+				const nextRow = filterItems[Number((parseInt(<string><any>value) + 1).toString())]; // for some reason parseInt is defined as only supporting strings even though it works fine for numbers
 				if (nextRow && nextRow.indexOf('Error:') >= 0) {
 					workingFilters.push(nextRow);
 				}
@@ -267,19 +301,19 @@ export class HeaderFilter {
 		return workingFilters;
 	}
 
-	private setButtonImage($el, filtered) {
-		let element: HTMLElement = $el.get(0);
+	private setButtonImage($el: JQuery<HTMLElement>, filtered: boolean) {
+		const element: HTMLElement = $el.get(0);
 		if (filtered) {
 			element.className += ' filtered';
 		} else {
-			let classList = element.classList;
+			const classList = element.classList;
 			if (classList.contains('filtered')) {
 				classList.remove('filtered');
 			}
 		}
 	}
 
-	private handleApply(e, columnDef) {
+	private handleApply(e: JQuery.Event<HTMLElement, null>, columnDef: Slick.Column<T>) {
 		this.hideMenu();
 
 		this.onFilterApplied.notify({ 'grid': this.grid, 'column': columnDef }, e, self);
@@ -287,59 +321,59 @@ export class HeaderFilter {
 		e.stopPropagation();
 	}
 
-	private getFilterValues(dataView, column) {
-		let seen = [];
-		for (let i = 0; i < dataView.getLength() ; i++) {
-			let value = dataView.getItem(i)[column.field];
+	private getFilterValues(dataView: Slick.DataProvider<T>, column: Slick.Column<T>): Array<any> {
+		const seen: Array<string> = [];
+		for (let i = 0; i < dataView.getLength(); i++) {
+			const value = dataView.getItem(i)[column.field!];
 
-			if (!_.contains(seen, value)) {
+			if (!seen.some(x => x === value)) {
 				seen.push(value);
 			}
 		}
 		return seen;
 	}
 
-	private getFilterValuesByInput($input) {
-		let column = $input.data('column'),
-			filter = $input.val(),
-			dataView = this.grid.getData(),
-			seen = [];
+	private getFilterValuesByInput($input: JQuery<HTMLElement>): Array<string> {
+		const column = $input.data('column'),
+			filter = $input.val() as string,
+			dataView = this.grid.getData() as Slick.DataProvider<T>,
+			seen: Array<any> = [];
 
-		for (let i = 0; i < dataView.getLength() ; i++) {
-			let value = dataView.getItem(i)[column.field];
+		for (let i = 0; i < dataView.getLength(); i++) {
+			const value = dataView.getItem(i)[column.field];
 
 			if (filter.length > 0) {
-				let itemValue = !value ? '' : value;
-				let lowercaseFilter = filter.toString().toLowerCase();
-				let lowercaseVal = itemValue.toString().toLowerCase();
-				if (!_.contains(seen, value) && lowercaseVal.indexOf(lowercaseFilter) > -1) {
+				const itemValue = !value ? '' : value;
+				const lowercaseFilter = filter.toString().toLowerCase();
+				const lowercaseVal = itemValue.toString().toLowerCase();
+				if (!seen.some(x => x === value) && lowercaseVal.indexOf(lowercaseFilter) > -1) {
 					seen.push(value);
 				}
 			}
 			else {
-				if (!_.contains(seen, value)) {
+				if (!seen.some(x => x === value)) {
 					seen.push(value);
 				}
 			}
 		}
 
-		return _.sortBy(seen, (v) => { return v; });
+		return seen.sort((v) => { return v; });
 	}
 
-	private getAllFilterValues(data, column) {
-		let seen = [];
+	private getAllFilterValues(data: Array<Slick.SlickData>, column: Slick.Column<T>) {
+		const seen: Array<any> = [];
 		for (let i = 0; i < data.length; i++) {
-			let value = data[i][column.field];
+			const value = data[i][column.field!];
 
-			if (!_.contains(seen, value)) {
+			if (!seen.some(x => x === value)) {
 				seen.push(value);
 			}
 		}
 
-		return _.sortBy(seen, (v) => { return v; });
+		return seen.sort((v) => { return v; });
 	}
 
-	private handleMenuItemClick(e, command, columnDef) {
+	private handleMenuItemClick(e: JQuery.Event<HTMLElement, null>, command: string, columnDef: Slick.Column<T>) {
 		this.hideMenu();
 
 		this.onCommand.notify({

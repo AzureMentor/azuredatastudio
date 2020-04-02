@@ -3,7 +3,6 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
 import { InputBox as vsInputBox, IInputOptions, IInputBoxStyles as vsIInputBoxStyles, IMessage } from 'vs/base/browser/ui/inputbox/inputBox';
 import { IContextViewProvider } from 'vs/base/browser/ui/contextview/contextview';
 import { Color } from 'vs/base/common/color';
@@ -20,19 +19,19 @@ export interface IInputBoxStyles extends vsIInputBoxStyles {
 }
 
 export class InputBox extends vsInputBox {
-	private enabledInputBackground: Color;
-	private enabledInputForeground: Color;
-	private enabledInputBorder: Color;
-	private disabledInputBackground: Color;
-	private disabledInputForeground: Color;
-	private disabledInputBorder: Color;
+	private enabledInputBackground?: Color;
+	private enabledInputForeground?: Color;
+	private enabledInputBorder?: Color;
+	private disabledInputBackground?: Color;
+	private disabledInputForeground?: Color;
+	private disabledInputBorder?: Color;
 
 	private _lastLoseFocusValue: string;
 
 	private _onLoseFocus = this._register(new Emitter<OnLoseFocusParams>());
 	public onLoseFocus: Event<OnLoseFocusParams> = this._onLoseFocus.event;
 
-	private _isTextAreaInput: boolean;
+	private _isTextAreaInput = false;
 	private _hideErrors = false;
 
 	constructor(container: HTMLElement, contextViewProvider: IContextViewProvider, options?: IInputOptions) {
@@ -41,8 +40,6 @@ export class InputBox extends vsInputBox {
 		this.enabledInputForeground = this.inputForeground;
 		this.enabledInputBorder = this.inputBorder;
 		this.disabledInputBackground = Color.transparent;
-		this.disabledInputForeground = null;
-		this.disabledInputBorder = null;
 
 		this._lastLoseFocusValue = this.value;
 		let self = this;
@@ -97,6 +94,10 @@ export class InputBox extends vsInputBox {
 		if (this._isTextAreaInput) {
 			this.inputElement.style.height = value;
 		}
+	}
+
+	public set ariaLive(value: string) {
+		this.element.setAttribute('aria-live', value);
 	}
 
 	public isEnabled(): boolean {

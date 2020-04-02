@@ -3,38 +3,40 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IDisposable, dispose } from 'vs/base/common/lifecycle';
+import { Disposable } from 'vs/base/common/lifecycle';
 import { Event, Emitter } from 'vs/base/common/event';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import * as dom from 'vs/base/browser/dom';
 import * as arrays from 'vs/base/common/arrays';
-import { ISelectBoxDelegate, ISelectBoxOptions, ISelectBoxStyles, ISelectData } from 'vs/base/browser/ui/selectBox/selectBox';
+import { ISelectBoxDelegate, ISelectOptionItem, ISelectBoxOptions, ISelectBoxStyles, ISelectData } from 'vs/base/browser/ui/selectBox/selectBox';
 import { isMacintosh } from 'vs/base/common/platform';
+import { Gesture, EventType } from 'vs/base/browser/touch';
 
-export class SelectBoxNative implements ISelectBoxDelegate {
+export class SelectBoxNative extends Disposable implements ISelectBoxDelegate {
 
 	// {{SQL CARBON EDIT}}
 	public selectElement: HTMLSelectElement;
 	private selectBoxOptions: ISelectBoxOptions;
-	private options: string[];
-	private selected: number;
+	private options: ISelectOptionItem[];
+	private selected = 0;
 	private readonly _onDidSelect: Emitter<ISelectData>;
-	private toDispose: IDisposable[];
 	private styles: ISelectBoxStyles;
 
-	constructor(options: string[], selected: number, styles: ISelectBoxStyles, selectBoxOptions?: ISelectBoxOptions) {
-
-		this.toDispose = [];
+	constructor(options: ISelectOptionItem[], selected: number, styles: ISelectBoxStyles, selectBoxOptions?: ISelectBoxOptions) {
+		super();
 		this.selectBoxOptions = selectBoxOptions || Object.create(null);
 
+		this.options = [];
+
 		this.selectElement = document.createElement('select');
+
 		this.selectElement.className = 'monaco-select-box';
 
 		if (typeof this.selectBoxOptions.ariaLabel === 'string') {
 			this.selectElement.setAttribute('aria-label', this.selectBoxOptions.ariaLabel);
 		}
 
-		this._onDidSelect = new Emitter<ISelectData>();
+		this._onDidSelect = this._register(new Emitter<ISelectData>());
 
 		this.styles = styles;
 
@@ -43,8 +45,14 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 	}
 
 	private registerListeners() {
+		this._register(Gesture.addTarget(this.selectElement));
+		[EventType.Tap].forEach(eventType => {
+			this._register(dom.addDisposableListener(this.selectElement, eventType, (e) => {
+				this.selectElement.focus();
+			}));
+		});
 
-		this.toDispose.push(dom.addStandardDisposableListener(this.selectElement, 'change', (e) => {
+		this._register(dom.addStandardDisposableListener(this.selectElement, 'change', (e) => {
 			this.selectElement.title = e.target.value;
 			this._onDidSelect.fire({
 				index: e.target.selectedIndex,
@@ -52,7 +60,7 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 			});
 		}));
 
-		this.toDispose.push(dom.addStandardDisposableListener(this.selectElement, 'keydown', (e) => {
+		this._register(dom.addStandardDisposableListener(this.selectElement, 'keydown', (e) => {
 			let showSelect = false;
 
 			if (isMacintosh) {
@@ -76,15 +84,14 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 		return this._onDidSelect.event;
 	}
 
-	public setOptions(options: string[], selected?: number, disabled?: number): void {
+	public setOptions(options: ISelectOptionItem[], selected?: number): void {
 
 		if (!this.options || !arrays.equals(this.options, options)) {
 			this.options = options;
 			this.selectElement.options.length = 0;
 
-			let i = 0;
-			this.options.forEach((option) => {
-				this.selectElement.add(this.createOption(option, i, disabled === i++));
+			this.options.forEach((option, index) => {
+				this.selectElement.add(this.createOption(option.text, index, option.isDisabled));
 			});
 
 		}
@@ -95,7 +102,9 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 	}
 
 	public select(index: number): void {
-		if (index >= 0 && index < this.options.length) {
+		if (this.options.length === 0) {
+			this.selected = 0;
+		} else if (index >= 0 && index < this.options.length) {
 			this.selected = index;
 		} else if (index > this.options.length - 1) {
 			// Adjust index to end of list
@@ -106,7 +115,11 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 		}
 
 		this.selectElement.selectedIndex = this.selected;
-		this.selectElement.title = this.options[this.selected];
+		if ((this.selected < this.options.length) && typeof this.options[this.selected].text === 'string') {
+			this.selectElement.title = this.options[this.selected].text;
+		} else {
+			this.selectElement.title = '';
+		}
 	}
 
 	public setAriaLabel(label: string): void {
@@ -142,9 +155,9 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 
 		// Style native select
 		if (this.selectElement) {
-			const background = this.styles.selectBackground ? this.styles.selectBackground.toString() : null;
-			const foreground = this.styles.selectForeground ? this.styles.selectForeground.toString() : null;
-			const border = this.styles.selectBorder ? this.styles.selectBorder.toString() : null;
+			const background = this.styles.selectBackground ? this.styles.selectBackground.toString() : '';
+			const foreground = this.styles.selectForeground ? this.styles.selectForeground.toString() : '';
+			const border = this.styles.selectBorder ? this.styles.selectBorder.toString() : '';
 
 			this.selectElement.style.backgroundColor = background;
 			this.selectElement.style.color = foreground;
@@ -154,15 +167,11 @@ export class SelectBoxNative implements ISelectBoxDelegate {
 	}
 
 	private createOption(value: string, index: number, disabled?: boolean): HTMLOptionElement {
-		let option = document.createElement('option');
+		const option = document.createElement('option');
 		option.value = value;
 		option.text = value;
-		option.disabled = disabled;
+		option.disabled = !!disabled;
 
 		return option;
-	}
-
-	public dispose(): void {
-		this.toDispose = dispose(this.toDispose);
 	}
 }

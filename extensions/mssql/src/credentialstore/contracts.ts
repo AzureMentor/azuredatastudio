@@ -2,10 +2,9 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { RequestType } from 'vscode-languageclient';
-import { Credential } from 'sqlops';
+import { Credential } from 'azdata';
 
 // --------------------------------- < Read Credential Request > -------------------------------------------------
 

@@ -3,9 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
-import * as sqlops from 'sqlops';
+import * as azdata from 'azdata';
 import * as nls from 'vscode-nls';
 
 import { ImportDataModel } from '../api/models';
@@ -17,12 +15,12 @@ const localize = nls.loadMessageBundle();
 
 
 export class SummaryPage extends ImportPage {
-	private table: sqlops.TableComponent;
-	private statusText: sqlops.TextComponent;
-	private loading: sqlops.LoadingComponent;
-	private form: sqlops.FormContainer;
+	private table: azdata.TableComponent;
+	private statusText: azdata.TextComponent;
+	private loading: azdata.LoadingComponent;
+	private form: azdata.FormContainer;
 
-	public constructor(instance: FlatFileWizard, wizardPage: sqlops.window.modelviewdialog.WizardPage, model: ImportDataModel, view: sqlops.ModelView, provider: FlatFileProvider) {
+	public constructor(instance: FlatFileWizard, wizardPage: azdata.window.WizardPage, model: ImportDataModel, view: azdata.ModelView, provider: FlatFileProvider) {
 		super(instance, wizardPage, model, view, provider);
 	}
 
@@ -35,11 +33,11 @@ export class SummaryPage extends ImportPage {
 			[
 				{
 					component: this.table,
-					title: localize('flatFileImport.importInformation', 'Import information')
+					title: localize('flatFileImport.importInformation', "Import information")
 				},
 				{
 					component: this.loading,
-					title: localize('flatFileImport.importStatus', 'Import status')
+					title: localize('flatFileImport.importStatus', "Import status")
 				}
 			]
 		).component();
@@ -72,11 +70,11 @@ export class SummaryPage extends ImportPage {
 	private populateTable() {
 		this.table.updateProperties({
 			data: [
-				[localize('flatFileImport.serverName', 'Server name'), this.model.server.providerName],
-				[localize('flatFileImport.databaseName', 'Database name'), this.model.database],
-				[localize('flatFileImport.tableName', 'Table name'), this.model.table],
-				[localize('flatFileImport.tableSchema', 'Table schema'), this.model.schema],
-				[localize('flatFileImport.fileImport', 'File to be imported'), this.model.filePath]],
+				[localize('flatFileImport.serverName', "Server name"), this.model.server.providerName],
+				[localize('flatFileImport.databaseName', "Database name"), this.model.database],
+				[localize('flatFileImport.tableName', "Table name"), this.model.table],
+				[localize('flatFileImport.tableSchema', "Table schema"), this.model.schema],
+				[localize('flatFileImport.fileImport', "File to be imported"), this.model.filePath]],
 			columns: ['Object type', 'Name'],
 			width: 600,
 			height: 200
@@ -120,7 +118,7 @@ export class SummaryPage extends ImportPage {
 			// TODO: When sql statements are in, implement this.
 			//let rows = await this.getCountRowsInserted();
 			//if (rows < 0) {
-			updateText = localize('flatFileImport.success.norows', '✔ You have successfully inserted the data into a table.');
+			updateText = localize('flatFileImport.success.norows', "✔ You have successfully inserted the data into a table.");
 			//} else {
 			//updateText = localize('flatFileImport.success.rows', '✔ You have successfully inserted {0} rows.', rows);
 			//}
@@ -133,7 +131,6 @@ export class SummaryPage extends ImportPage {
 
 	/**
 	 * Gets the connection string to send to the middleware
-	 * @returns {Promise<string>}
 	 */
 	private async getConnectionString(): Promise<string> {
 		let options = this.model.server.options;
@@ -142,18 +139,18 @@ export class SummaryPage extends ImportPage {
 		if (options.authenticationType === 'Integrated') {
 			connectionString = `Data Source=${options.server + (options.port ? `,${options.port}` : '')};Initial Catalog=${this.model.database};Integrated Security=True`;
 		} else {
-			let credentials = await sqlops.connection.getCredentials(this.model.server.connectionId);
+			let credentials = await azdata.connection.getCredentials(this.model.server.connectionId);
 			connectionString = `Data Source=${options.server + (options.port ? `,${options.port}` : '')};Initial Catalog=${this.model.database};Integrated Security=False;User Id=${options.user};Password=${credentials.password}`;
 		}
 
 		// TODO: Fix this, it's returning undefined string.
-		//await sqlops.connection.getConnectionString(this.model.server.connectionId, true);
+		//await azdata.connection.getConnectionString(this.model.server.connectionId, true);
 		return connectionString;
 	}
 
 	// private async getCountRowsInserted(): Promise<Number> {
-	// 	let connectionUri = await sqlops.connection.getUriForConnection(this.model.server.connectionId);
-	// 	let queryProvider = sqlops.dataprotocol.getProvider<sqlops.QueryProvider>(this.model.server.providerName, sqlops.DataProviderType.QueryProvider);
+	// 	let connectionUri = await azdata.connection.getUriForConnection(this.model.server.connectionId);
+	// 	let queryProvider = azdata.dataprotocol.getProvider<azdata.QueryProvider>(this.model.server.providerName, azdata.DataProviderType.QueryProvider);
 	// 	try {
 	// 		let query = sqlstring.format('USE ?; SELECT COUNT(*) FROM ?', [this.model.database, this.model.table]);
 	// 		let results = await queryProvider.runQueryAndReturn(connectionUri, query);

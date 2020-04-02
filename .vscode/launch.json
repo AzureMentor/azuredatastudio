@@ -9,45 +9,40 @@
 			"stopOnEntry": true,
 			"args": [
 				"hygiene"
-			],
-			"cwd": "${workspaceFolder}"
+			]
 		},
 		{
 			"type": "node",
 			"request": "attach",
 			"name": "Attach to Extension Host",
-			"protocol": "inspector",
 			"port": 5870,
-			"restart": true,
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
 			]
 		},
 		{
-			"type": "node",
+			"type": "chrome",
 			"request": "attach",
 			"name": "Attach to Shared Process",
-			"protocol": "inspector",
-			"port": 5871,
-			"outFiles": [
-				"${workspaceFolder}/out/**/*.js"
-			]
+			"port": 9222,
+			"urlFilter": "*"
 		},
 		{
 			"type": "node",
 			"request": "attach",
-			"protocol": "inspector",
 			"name": "Attach to Search Process",
 			"port": 5876,
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
-			]
+			],
+			"presentation": {
+				"hidden": true,
+			}
 		},
 		{
 			"type": "node",
 			"request": "attach",
 			"name": "Attach to CLI Process",
-			"protocol": "inspector",
 			"port": 5874,
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
@@ -57,11 +52,13 @@
 			"type": "node",
 			"request": "attach",
 			"name": "Attach to Main Process",
-			"protocol": "inspector",
 			"port": 5875,
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
-			]
+			],
+			"presentation": {
+				"hidden": true,
+			}
 		},
 		{
 			"type": "chrome",
@@ -82,22 +79,126 @@
 			"linux": {
 				"runtimeExecutable": "${workspaceFolder}/scripts/sql.sh"
 			},
+			"port": 9222,
+			"timeout": 20000,
+			"env": {
+				"VSCODE_EXTHOST_WILL_SEND_SOCKET": null
+			},
+			"breakOnLoad": false,
+			"urlFilter": "*workbench.html*",
+			"runtimeArgs": [
+				"--inspect=5875",
+				"--no-cached-data",
+			],
+			"webRoot": "${workspaceFolder}",
+			// Settings for js-debug:
+			"userDataDir": false,
+			"pauseForSourceMap": false,
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js"
+			],
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "Launch ADS (Main Process)",
+			"runtimeExecutable": "${workspaceFolder}/scripts/sql.sh",
+			"windows": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql.bat",
+			},
+			"runtimeArgs": [
+				"--no-cached-data"
+			],
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js"
+			],
+			"presentation": {
+				"group": "2_launch",
+				"order": 1
+			}
+		},
+		{
+			"type": "chrome",
+			"request": "launch",
+			"name": "Launch azuredatastudio with new notebook command",
+			"windows": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql.bat"
+			},
+			"osx": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql.sh"
+			},
+			"linux": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql.sh"
+			},
 			"urlFilter": "*index.html*",
 			"runtimeArgs": [
-				"--inspect=5875"
+				"--inspect=5875",
+				"--command=notebook.command.new"
 			],
 			"skipFiles": [
 				"**/winjs*.js"
 			],
 			"webRoot": "${workspaceFolder}",
-			"timeout": 15000
+			"timeout": 45000
+		},
+		{
+			"type": "chrome",
+			"request": "launch",
+			"name": "Launch ADS (Web) (TBD)",
+			"runtimeExecutable": "yarn",
+			"runtimeArgs": [
+				"web"
+			],
+			"presentation": {
+				"group": "2_launch",
+				"order": 2
+			}
+		},
+		{
+			"type": "chrome",
+			"request": "launch",
+			"name": "Launch ADS (Web, Chrome) (TBD)",
+			"url": "http://localhost:8080",
+			"preLaunchTask": "Run web",
+			"presentation": {
+				"group": "2_launch",
+				"order": 3
+			}
 		},
 		{
 			"type": "node",
 			"request": "launch",
-			"name": "Unit Tests",
-			"protocol": "inspector",
-			"program": "${workspaceFolder}/node_modules/mocha/bin/_mocha",
+			"name": "Git Unit Tests",
+			"program": "${workspaceFolder}/extensions/git/node_modules/mocha/bin/_mocha",
+			"stopOnEntry": false,
+			"cwd": "${workspaceFolder}/extensions/git",
+			"outFiles": [
+				"${workspaceFolder}/extensions/git/out/**/*.js"
+			],
+			"presentation": {
+				"group": "5_tests",
+				"order": 10
+			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "Launch Smoke Test",
+			"program": "${workspaceFolder}/test/smoke/test/index.js",
+			"cwd": "${workspaceFolder}/test/smoke",
+			"env": {
+				"BUILD_ARTIFACTSTAGINGDIRECTORY": "${workspaceFolder}"
+			},
+			"presentation": {
+				"group": "5_tests",
+				"order": 8
+			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "Run Unit Tests",
+			"program": "${workspaceFolder}/test/unit/electron/index.js",
 			"runtimeExecutable": "${workspaceFolder}/.build/electron/Azure Data Studio.app/Contents/MacOS/Electron",
 			"windows": {
 				"runtimeExecutable": "${workspaceFolder}/.build/electron/azuredatastudio.exe"
@@ -105,52 +206,113 @@
 			"linux": {
 				"runtimeExecutable": "${workspaceFolder}/.build/electron/azuredatastudio"
 			},
-			"stopOnEntry": false,
 			"outputCapture": "std",
 			"args": [
-				"--delay",
-				"--timeout",
-				"2000"
+				"--remote-debugging-port=9222"
 			],
 			"cwd": "${workspaceFolder}",
-			"env": {
-				"ELECTRON_RUN_AS_NODE": "true"
-			},
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
+			],
+			"env": {
+				"MOCHA_COLORS": "true"
+			},
+			"presentation": {
+				"hidden": true
+			}
+		},
+		{
+			"type": "chrome",
+			"request": "launch",
+			"name": "Run Extension Unit Tests",
+			"windows": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/test-extensions-unit.bat"
+			},
+			"osx": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/test-extensions-unit.sh"
+			},
+			"linux": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/test-extensions-unit.sh"
+			},
+			"webRoot": "${workspaceFolder}",
+			"timeout": 45000
+		},
+		{
+			"type": "chrome",
+			"request": "launch",
+			"name": "Run Extension Integration Tests",
+			"windows": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql-test-integration.bat"
+			},
+			"osx": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql-test-integration.sh"
+			},
+			"linux": {
+				"runtimeExecutable": "${workspaceFolder}/scripts/sql-test-integration.sh"
+			},
+			"webRoot": "${workspaceFolder}",
+			"timeout": 45000
+		},
+	],
+	"compounds": [
+		{
+			"name": "Debug Unit Tests",
+			"configurations": [
+				"Attach to azuredatastudio",
+				"Run Unit Tests"
 			]
 		},
 		{
-			"name": "Launch Built-in Extension",
-			"type": "extensionHost",
-			"request": "launch",
-			"runtimeExecutable": "${execPath}",
-			"args": [
-				"--extensionDevelopmentPath=${workspaceRoot}/extensions/debug-auto-launch"
+			"name": "Debug Extension Unit Tests",
+			"configurations": [
+				"Attach to Extension Host",
+				"Run Extension Unit Tests"
 			]
-		}
-	],
-	"compounds": [
+		},
 		{
 			"name": "Debug azuredatastudio Main and Renderer",
 			"configurations": [
 				"Launch azuredatastudio",
 				"Attach to Main Process"
-			]
+			],
+			"presentation": {
+				"group": "1_vscode",
+				"order": 1
+			}
 		},
 		{
-			"name": "Search and Renderer processes",
+			"name": "Debug azuredatastudio Main, Renderer & Extension Host",
 			"configurations": [
 				"Launch azuredatastudio",
-				"Attach to Search Process"
-			]
+				"Attach to Main Process",
+				"Attach to Extension Host"
+			],
+			"presentation": {
+				"group": "1_vscode",
+				"order": 3
+			}
 		},
 		{
-			"name": "Renderer and Extension Host processes",
+			"name": "Debug Renderer and Extension Host processes",
 			"configurations": [
-				"Launch SQL Ops",
+				"Launch azuredatastudio",
 				"Attach to Extension Host"
-			]
+			],
+			"presentation": {
+				"group": "1_vscode",
+				"order": 2
+			}
+		},
+		{
+			"name": "Attach Renderer and Extension Host",
+			"configurations": [
+				"Attach to azuredatastudio",
+				"Attach to Extension Host"
+			],
+			"presentation": {
+				"group": "1_vscode",
+				"order": 2
+			}
 		}
 	]
 }

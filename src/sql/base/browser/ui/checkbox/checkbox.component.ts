@@ -3,35 +3,33 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import {
 	Component, Inject, forwardRef, ElementRef, OnInit, Input,
 	Output, OnChanges, SimpleChanges, EventEmitter
 } from '@angular/core';
 
-import { Checkbox as vsCheckbox } from 'sql/base/browser/ui/checkbox/checkbox';
+import { Checkbox as sqlCheckbox } from 'sql/base/browser/ui/checkbox/checkbox';
 
 @Component({
 	selector: 'checkbox',
 	template: ''
 })
 export class Checkbox implements OnInit, OnChanges {
-	@Input() label: string;
+	@Input() label!: string;
 	@Input() enabled = true;
 	@Input() checked = true;
-	@Input('aria-label') private ariaLabel: string;
+	@Input('aria-label') private ariaLabel?: string;
 
 	@Output() onChange = new EventEmitter<boolean>();
 
-	private _checkbox: vsCheckbox;
+	private _checkbox?: sqlCheckbox;
 
 	constructor(
 		@Inject(forwardRef(() => ElementRef)) private _el: ElementRef
 	) { }
 
 	ngOnInit(): void {
-		this._checkbox = new vsCheckbox(this._el.nativeElement, {
+		this._checkbox = new sqlCheckbox(this._el.nativeElement, {
 			label: this.label,
 			ariaLabel: this.ariaLabel || this.label,
 			checked: this.checked,

@@ -21,6 +21,10 @@
 	position: relative;
 }
 
+.carbon-taskbar .monaco-action-bar {
+	padding: 2px 0px 2px 0px;
+}
+
 .carbon-taskbar.monaco-toolbar .monaco-action-bar.animated .actions-container {
 	justify-content: flex-start;
 	padding-left: 15px;
@@ -39,11 +43,6 @@
 	align-items: center;
 }
 
-.carbon-taskbar {
-	margin-top: 2px;
-	margin-bottom: 2px;
-}
-
 .carbon-taskbar .action-item {
 	margin-right: 5px;
 }
@@ -52,7 +51,12 @@
 	background-repeat: no-repeat;
 	background-position: 0% 50%;
 	padding-left: 15px;
- }
+}
+
+.carbon-taskbar .action-item-label {
+	display: flex;
+	padding-right: 5px;
+}
 
 .listDatabasesSelectBox {
 	padding-left: 2px;
@@ -63,13 +67,12 @@
 .configuration.select-container .select-box {
 	margin-top: 4px;
 	margin-top: 3px;
- }
+}
 
 .taskbarSeparator {
 	width: 1px;
-	background-color:#555;
-	margin-right: 6px;
-	margin-top: 3px;
+	background-color:#A5A5A5;
+	margin: 6px 8px;
 }
 
 .taskbarTextSeparator {
@@ -80,6 +83,6 @@
 
 /* Taskbar Icons */
 
-.carbon-taskbar .icon {
+.carbon-taskbar .codicon {
 	background-size: 11px;
 }

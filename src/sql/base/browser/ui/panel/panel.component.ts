@@ -5,21 +5,24 @@
 
 import {
 	Component, ContentChildren, QueryList, Inject, forwardRef, NgZone,
-	Input, EventEmitter, Output, ViewChild, ElementRef
+	Input, EventEmitter, Output, ViewChild, ElementRef, ChangeDetectorRef, ViewChildren
 } from '@angular/core';
 
-import './panelStyles';
-
-import { TabComponent } from './tab.component';
+import { TabComponent } from 'sql/base/browser/ui/panel/tab.component';
 import { ScrollableDirective } from 'sql/base/browser/ui/scrollable/scrollable.directive';
-import { subscriptionToDisposable } from 'sql/base/common/lifecycle';
+import { subscriptionToDisposable } from 'sql/base/browser/lifecycle';
 
 import { ActionBar } from 'vs/base/browser/ui/actionbar/actionbar';
 import { Action } from 'vs/base/common/actions';
 import * as types from 'vs/base/common/types';
 import { mixin } from 'vs/base/common/objects';
-import { ScrollbarVisibility } from 'vs/base/common/scrollable';
 import { Disposable } from 'vs/base/common/lifecycle';
+import { ScrollbarVisibility } from 'vs/base/common/scrollable';
+import { firstIndex } from 'vs/base/common/arrays';
+import * as nls from 'vs/nls';
+import { TabHeaderComponent } from 'sql/base/browser/ui/panel/tabHeader.component';
+import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { KeyCode } from 'vs/base/common/keyCodes';
 
 export interface IPanelOptions {
 	/**
@@ -49,9 +52,19 @@ let idPool = 0;
 		<div class="tabbedPanel fullsize" [ngClass]="options.layout === NavigationBarLayout.vertical ? 'vertical' : 'horizontal'">
 			<div *ngIf="!options.showTabsWhenOne ? _tabs.length !== 1 : true" class="composite title">
 				<div class="tabContainer">
-					<div class="tabList" role="tablist" scrollable [horizontalScroll]="ScrollbarVisibility.Auto" [verticalScroll]="ScrollbarVisibility.Hidden" [scrollYToX]="true">
+					<div *ngIf="options.layout === NavigationBarLayout.vertical" class="action-container">
+						<button [attr.aria-expanded]="_tabExpanded" [title]="toggleTabPanelButtonAriaLabel" [attr.aria-label]="toggleTabPanelButtonAriaLabel" [ngClass]="toggleTabPanelButtonCssClass" tabindex="0" (click)="toggleTabPanel()"></button>
+					</div>
+					<div [style.display]="_tabExpanded ? 'flex': 'none'" [attr.aria-hidden]="_tabExpanded ? 'false': 'true'" class="tabList" role="tablist" scrollable [horizontalScroll]="AutoScrollbarVisibility" [verticalScroll]="HiddenScrollbarVisibility" [scrollYToX]="true" (keydown)="onKey($event)">
 						<div role="presentation" *ngFor="let tab of _tabs">
-							<tab-header role="presentation" [active]="_activeTab === tab" [tab]="tab" [showIcon]="options.showIcon" (onSelectTab)='selectTab($event)' (onCloseTab)='closeTab($event)'></tab-header>
+							<ng-container *ngIf="tab.type!=='group-header'">
+								<tab-header role="presentation" [active]="_activeTab === tab" [tab]="tab" [showIcon]="options.showIcon" (onSelectTab)='selectTab($event)' (onCloseTab)='closeTab($event)'></tab-header>
+							</ng-container>
+							<ng-container *ngIf="tab.type==='group-header' && options.layout === NavigationBarLayout.vertical">
+								<div class="tab-group-header">
+									<span>{{tab.title}}</span>
+								</div>
+							</ng-container >
 						</div>
 					</div>
 				</div>
@@ -69,29 +82,46 @@ let idPool = 0;
 	`
 })
 export class PanelComponent extends Disposable {
-	@Input() public options: IPanelOptions;
-	@Input() public actions: Array<Action>;
-	@ContentChildren(TabComponent) private _tabs: QueryList<TabComponent>;
-	@ViewChild(ScrollableDirective) private scrollable: ScrollableDirective;
+	@Input() public options?: IPanelOptions;
+	@Input() public actions?: Array<Action>;
+	@ContentChildren(TabComponent) private readonly _tabs!: QueryList<TabComponent>;
+	@ViewChildren(TabHeaderComponent) private readonly _tabHeaders!: QueryList<TabHeaderComponent>;
+	@ViewChild(ScrollableDirective) private scrollable?: ScrollableDirective;
 
 	@Output() public onTabChange = new EventEmitter<TabComponent>();
 	@Output() public onTabClose = new EventEmitter<TabComponent>();
 
-	private _activeTab: TabComponent;
-	private _actionbar: ActionBar;
-	private _mru: TabComponent[];
+	private _activeTab?: TabComponent;
+	private _actionbar?: ActionBar;
+	private _mru: TabComponent[] = [];
+	private _tabExpanded: boolean = true;
 
-	protected ScrollbarVisibility = ScrollbarVisibility;
-	protected NavigationBarLayout = NavigationBarLayout;
+	protected AutoScrollbarVisibility = ScrollbarVisibility.Auto; // used by angular template
+	protected HiddenScrollbarVisibility = ScrollbarVisibility.Hidden; // used by angular template
+	protected NavigationBarLayout = NavigationBarLayout; // used by angular template
 
-	@ViewChild('panelActionbar', { read: ElementRef }) private _actionbarRef: ElementRef;
-	constructor( @Inject(forwardRef(() => NgZone)) private _zone: NgZone) {
+	@ViewChild('panelActionbar', { read: ElementRef }) private _actionbarRef!: ElementRef;
+	constructor(
+		@Inject(forwardRef(() => NgZone)) private _zone: NgZone,
+		@Inject(forwardRef(() => ChangeDetectorRef)) private _cd: ChangeDetectorRef) {
 		super();
+	}
+
+	public get toggleTabPanelButtonCssClass(): string {
+		return this._tabExpanded ? 'tab-action collapse' : 'tab-action expand';
+	}
+
+	public get toggleTabPanelButtonAriaLabel(): string {
+		return this._tabExpanded ? nls.localize('hideTextLabel', "Hide text labels") : nls.localize('showTextLabel', "Show text labels");
+	}
+
+	toggleTabPanel(): void {
+		this._tabExpanded = !this._tabExpanded;
+		this._cd.detectChanges();
 	}
 
 	ngOnInit(): void {
 		this.options = mixin(this.options || {}, defaultOptions, false);
-		this._mru = [];
 	}
 
 	ngAfterContentInit(): void {
@@ -141,66 +171,69 @@ export class PanelComponent extends Disposable {
 	 * Select a tab based on index (unrecommended)
 	 * @param index index of tab in the html
 	 */
-	selectTab(index: number);
+	selectTab(index: number): void;
 	/**
 	 * Select a tab based on the identifier that was passed into the tab
 	 * @param identifier specified identifer of the tab
 	 */
-	selectTab(identifier: string);
+	selectTab(identifier: string): void;
 	/**
 	 * Select a tab directly if you have access to the object
 	 * @param tab tab to navigate to
 	 */
-	selectTab(tab: TabComponent);
-	selectTab(input: TabComponent | number | string) {
+	selectTab(tab: TabComponent): void;
+	selectTab(input: TabComponent | number | string): void {
 		if (this._tabs && this._tabs.length > 0) {
-			let tab: TabComponent;
+			let foundTab: TabComponent | undefined;
 			if (input instanceof TabComponent) {
-				tab = input;
+				foundTab = input;
 			} else if (types.isNumber(input)) {
-				tab = this._tabs.toArray()[input];
+				foundTab = this._tabs.toArray()[input];
 			} else if (types.isString(input)) {
-				tab = this._tabs.find(i => i.identifier === input);
+				foundTab = this._tabs.find(i => i.identifier === input);
 			}
 
-			// since we need to compare identifiers in this next step we are going to go through and make sure all tabs have one
-			this._tabs.forEach(i => {
-				if (!i.identifier) {
-					i.identifier = 'tabIndex_' + idPool++;
-				}
-			});
+			if (foundTab) {
+				const tab = foundTab;
+				// since we need to compare identifiers in this next step we are going to go through and make sure all tabs have one
+				this._tabs.forEach(i => {
+					if (!i.identifier) {
+						i.identifier = 'tabIndex_' + idPool++;
+					}
+				});
 
-			if (this._activeTab && tab === this._activeTab) {
-				this.onTabChange.emit(tab);
-				return;
+				if (this._activeTab && tab === this._activeTab) {
+					this.onTabChange.emit(tab);
+					return;
+				}
+
+				this._zone.run(() => {
+					if (this._activeTab) {
+						this._activeTab.active = false;
+					}
+
+					this._activeTab = tab;
+					this.setMostRecentlyUsed(tab);
+					this._activeTab.active = true;
+
+					this.onTabChange.emit(tab);
+				});
 			}
-
-			this._zone.run(() => {
-				if (this._activeTab) {
-					this._activeTab.active = false;
-				}
-
-				this._activeTab = tab;
-				this.setMostRecentlyUsed(tab);
-				this._activeTab.active = true;
-
-				this.onTabChange.emit(tab);
-			});
 		}
 	}
 
 	/**
 	 * Get the id of the active tab
 	 */
-	public get getActiveTab(): string {
-		return this._activeTab.identifier;
+	public get getActiveTab(): string | undefined {
+		return this._activeTab?.identifier;
 	}
 
 	/**
 	 * Select on the next tab
 	 */
 	public selectOnNextTab(): void {
-		let activeIndex = this._tabs.toArray().findIndex(i => i === this._activeTab);
+		let activeIndex = firstIndex(this._tabs.toArray(), i => i === this._activeTab);
 		let nextTabIndex = activeIndex + 1;
 		if (nextTabIndex === this._tabs.length) {
 			nextTabIndex = 0;
@@ -209,7 +242,7 @@ export class PanelComponent extends Disposable {
 	}
 
 	private findAndRemoveTabFromMRU(tab: TabComponent): void {
-		let mruIndex = this._mru.findIndex(i => i === tab);
+		let mruIndex = firstIndex(this._mru, i => i === tab);
 
 		if (mruIndex !== -1) {
 			// Remove old index
@@ -241,6 +274,51 @@ export class PanelComponent extends Disposable {
 	}
 
 	public layout() {
-		this._activeTab.layout();
+		this._activeTab?.layout();
+	}
+
+	onKey(e: KeyboardEvent): void {
+		const event = new StandardKeyboardEvent(e);
+		let eventHandled: boolean = false;
+		if (event.equals(KeyCode.DownArrow) || event.equals(KeyCode.RightArrow)) {
+			this.focusNextTab();
+			eventHandled = true;
+		} else if (event.equals(KeyCode.UpArrow) || event.equals(KeyCode.LeftArrow)) {
+			this.focusPreviousTab();
+			eventHandled = true;
+		}
+
+		if (eventHandled) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	}
+
+	private focusPreviousTab(): void {
+		const currentIndex = this.focusedTabHeaderIndex;
+		if (currentIndex !== -1) {
+			// Move to the previous tab, if we are at the first tab then move to the last tab.
+			this.focusOnTabHeader(currentIndex === 0 ? this._tabHeaders.length - 1 : currentIndex - 1);
+		}
+	}
+
+	private focusNextTab(): void {
+		const currentIndex = this.focusedTabHeaderIndex;
+		if (currentIndex !== -1) {
+			// Move to the next tab, if we are at the last tab then move to the first tab.
+			this.focusOnTabHeader(currentIndex === this._tabHeaders.length - 1 ? 0 : currentIndex + 1);
+		}
+	}
+
+	private focusOnTabHeader(index: number): void {
+		if (index >= 0 && index <= this._tabHeaders.length - 1) {
+			this._tabHeaders.toArray()[index].focusOnTabHeader();
+		}
+	}
+
+	private get focusedTabHeaderIndex(): number {
+		return this._tabHeaders.toArray().findIndex((header) => {
+			return header.nativeElement === document.activeElement;
+		});
 	}
 }

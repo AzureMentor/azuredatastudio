@@ -2,16 +2,18 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
-
+import * as nls from 'vscode-nls';
 import { SqlOpsDataClient, SqlOpsFeature } from 'dataprotocol-client';
 import { ClientCapabilities, StaticFeature, RPCMessageType, ServerCapabilities } from 'vscode-languageclient';
-import { Disposable } from 'vscode';
+import { Disposable, window, QuickPickItem, QuickPickOptions } from 'vscode';
 import { Telemetry } from './telemetry';
-import * as contracts  from './contracts';
-import * as sqlops from 'sqlops';
+import * as contracts from './contracts';
+import * as azdata from 'azdata';
 import * as Utils from './utils';
 import * as UUID from 'vscode-languageclient/lib/utils/uuid';
+import { DataItemCache } from './util/dataCache';
+
+const localize = nls.loadMessageBundle();
 
 export class TelemetryFeature implements StaticFeature {
 
@@ -26,6 +28,82 @@ export class TelemetryFeature implements StaticFeature {
 			Telemetry.sendTelemetryEvent(e.params.eventName, e.params.properties, e.params.measures);
 		});
 	}
+}
+
+export class AccountFeature implements StaticFeature {
+
+	tokenCache: DataItemCache<contracts.RequestSecurityTokenResponse | undefined>;
+
+	constructor(private _client: SqlOpsDataClient) { }
+
+	fillClientCapabilities(capabilities: ClientCapabilities): void { }
+
+	initialize(): void {
+		let timeToLiveInSeconds = 10;
+		this.tokenCache = new DataItemCache(this.getToken, timeToLiveInSeconds);
+		this._client.onRequest(contracts.SecurityTokenRequest.type, async (request): Promise<contracts.RequestSecurityTokenResponse | undefined> => {
+			return this.tokenCache.getData(request);
+		});
+	}
+
+	protected async getToken(request: contracts.RequestSecurityTokenParams): Promise<contracts.RequestSecurityTokenResponse | undefined> {
+		const accountList = await azdata.accounts.getAllAccounts();
+		let account: azdata.Account;
+
+		if (accountList.length < 1) {
+			// TODO: Prompt user to add account
+			window.showErrorMessage(localize('mssql.missingLinkedAzureAccount', "Azure Data Studio needs to contact Azure Key Vault to access a column master key for Always Encrypted, but no linked Azure account is available. Please add a linked Azure account and retry the query."));
+			return undefined;
+		} else if (accountList.length > 1) {
+			let options: QuickPickOptions = {
+				ignoreFocusOut: true,
+				placeHolder: localize('mssql.chooseLinkedAzureAccount', "Please select a linked Azure account:")
+			};
+			let items = accountList.map(a => new AccountFeature.AccountQuickPickItem(a));
+			let selectedItem = await window.showQuickPick(items, options);
+			if (!selectedItem) { // The user canceled the selection.
+				window.showErrorMessage(localize('mssql.canceledLinkedAzureAccountSelection', "Azure Data Studio needs to contact Azure Key Vault to access a column master key for Always Encrypted, but no linked Azure account was selected. Please retry the query and select a linked Azure account when prompted."));
+				return undefined;
+			}
+			account = selectedItem.account;
+		} else {
+			account = accountList[0];
+		}
+
+		const securityToken: { [key: string]: any } = await azdata.accounts.getSecurityToken(account, azdata.AzureResource.AzureKeyVault);
+		const tenant = account.properties.tenants.find((t: { [key: string]: string }) => request.authority.includes(t.id));
+		const unauthorizedMessage = localize('mssql.insufficientlyPrivelagedAzureAccount', "The configured Azure account for {0} does not have sufficient permissions for Azure Key Vault to access a column master key for Always Encrypted.", account.key.accountId);
+		if (!tenant) {
+			window.showErrorMessage(unauthorizedMessage);
+			return undefined;
+		}
+		let tokenBundle = securityToken[tenant.id];
+		if (!tokenBundle) {
+			window.showErrorMessage(unauthorizedMessage);
+			return undefined;
+		}
+
+		let params: contracts.RequestSecurityTokenResponse = {
+			accountKey: JSON.stringify(account.key),
+			token: securityToken[tenant.id].token
+		};
+
+		return params;
+	}
+
+	static AccountQuickPickItem = class implements QuickPickItem {
+		account: azdata.Account;
+		label: string;
+		description?: string;
+		detail?: string;
+		picked?: boolean;
+		alwaysShow?: boolean;
+
+		constructor(account: azdata.Account) {
+			this.account = account;
+			this.label = account.key.accountId;
+		}
+	};
 }
 
 export class AgentServicesFeature extends SqlOpsFeature<undefined> {
@@ -69,7 +147,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 		};
 
 		// Job management methods
-		let getJobs = (ownerUri: string): Thenable<sqlops.AgentJobsResult> => {
+		let getJobs = (ownerUri: string): Thenable<azdata.AgentJobsResult> => {
 			let params: contracts.AgentJobsParams = { ownerUri: ownerUri, jobId: null };
 			return client.sendRequest(contracts.AgentJobsRequest.type, params).then(
 				r => r,
@@ -80,8 +158,8 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let getJobHistory = (ownerUri: string, jobID: string): Thenable<sqlops.AgentJobHistoryResult> => {
-			let params: contracts.AgentJobHistoryParams = { ownerUri: ownerUri, jobId: jobID };
+		let getJobHistory = (ownerUri: string, jobID: string, jobName: string): Thenable<azdata.AgentJobHistoryResult> => {
+			let params: contracts.AgentJobHistoryParams = { ownerUri: ownerUri, jobId: jobID, jobName: jobName };
 
 			return client.sendRequest(contracts.AgentJobHistoryRequest.type, params).then(
 				r => r,
@@ -92,7 +170,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let jobAction = (ownerUri: string, jobName: string, action: string): Thenable<sqlops.ResultStatus> => {
+		let jobAction = (ownerUri: string, jobName: string, action: string): Thenable<azdata.ResultStatus> => {
 			let params: contracts.AgentJobActionParams = { ownerUri: ownerUri, jobName: jobName, action: action };
 			return client.sendRequest(contracts.AgentJobActionRequest.type, params).then(
 				r => r,
@@ -103,7 +181,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let createJob = (ownerUri: string, jobInfo: sqlops.AgentJobInfo): Thenable<sqlops.CreateAgentJobResult> => {
+		let createJob = (ownerUri: string, jobInfo: azdata.AgentJobInfo): Thenable<azdata.CreateAgentJobResult> => {
 			let params: contracts.CreateAgentJobParams = {
 				ownerUri: ownerUri,
 				job: jobInfo
@@ -121,7 +199,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let updateJob = (ownerUri: string, originalJobName: string, jobInfo: sqlops.AgentJobInfo): Thenable<sqlops.UpdateAgentJobResult> => {
+		let updateJob = (ownerUri: string, originalJobName: string, jobInfo: azdata.AgentJobInfo): Thenable<azdata.UpdateAgentJobResult> => {
 			let params: contracts.UpdateAgentJobParams = {
 				ownerUri: ownerUri,
 				originalJobName: originalJobName,
@@ -140,7 +218,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let deleteJob = (ownerUri: string, jobInfo: sqlops.AgentJobInfo): Thenable<sqlops.ResultStatus> => {
+		let deleteJob = (ownerUri: string, jobInfo: azdata.AgentJobInfo): Thenable<azdata.ResultStatus> => {
 			let params: contracts.DeleteAgentJobParams = {
 				ownerUri: ownerUri,
 				job: jobInfo
@@ -158,7 +236,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let getJobDefaults = (ownerUri: string): Thenable<sqlops.AgentJobDefaultsResult> => {
+		let getJobDefaults = (ownerUri: string): Thenable<azdata.AgentJobDefaultsResult> => {
 			let params: contracts.AgentJobDefaultsParams = {
 				ownerUri: ownerUri
 			};
@@ -173,7 +251,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 		};
 
 		// Job Step management methods
-		let createJobStep = (ownerUri: string, stepInfo: sqlops.AgentJobStepInfo): Thenable<sqlops.CreateAgentJobStepResult> => {
+		let createJobStep = (ownerUri: string, stepInfo: azdata.AgentJobStepInfo): Thenable<azdata.CreateAgentJobStepResult> => {
 			let params: contracts.CreateAgentJobStepParams = {
 				ownerUri: ownerUri,
 				step: stepInfo
@@ -191,7 +269,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let updateJobStep = (ownerUri: string, originalJobStepName: string, stepInfo: sqlops.AgentJobStepInfo): Thenable<sqlops.UpdateAgentJobStepResult> => {
+		let updateJobStep = (ownerUri: string, originalJobStepName: string, stepInfo: azdata.AgentJobStepInfo): Thenable<azdata.UpdateAgentJobStepResult> => {
 			let params: contracts.UpdateAgentJobStepParams = {
 				ownerUri: ownerUri,
 				originalJobStepName: originalJobStepName,
@@ -210,7 +288,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let deleteJobStep = (ownerUri: string, stepInfo: sqlops.AgentJobStepInfo): Thenable<sqlops.ResultStatus> => {
+		let deleteJobStep = (ownerUri: string, stepInfo: azdata.AgentJobStepInfo): Thenable<azdata.ResultStatus> => {
 			let params: contracts.DeleteAgentJobStepParams = {
 				ownerUri: ownerUri,
 				step: stepInfo
@@ -228,8 +306,153 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
+		// Notebook Management methods
+		const getNotebooks = (ownerUri: string): Thenable<azdata.AgentNotebooksResult> => {
+			let params: contracts.AgentNotebookParams = { ownerUri: ownerUri };
+			return client.sendRequest(contracts.AgentNotebooksRequest.type, params).then(
+				r => r,
+				e => {
+					client.logFailedRequest(contracts.AgentNotebooksRequest.type, e);
+					return Promise.resolve(undefined);
+				}
+			);
+		};
+
+		const getNotebookHistory = (ownerUri: string, jobID: string, jobName: string, targetDatabase: string): Thenable<azdata.AgentNotebookHistoryResult> => {
+			let params: contracts.AgentNotebookHistoryParams = { ownerUri: ownerUri, jobId: jobID, jobName: jobName, targetDatabase: targetDatabase };
+
+			return client.sendRequest(contracts.AgentNotebookHistoryRequest
+				.type, params).then(
+					r => r,
+					e => {
+						client.logFailedRequest(contracts.AgentNotebookHistoryRequest.type, e);
+						return Promise.resolve(undefined);
+					}
+				);
+		};
+
+		const getMaterializedNotebook = (ownerUri: string, targetDatabase: string, notebookMaterializedId: number): Thenable<azdata.AgentNotebookMaterializedResult> => {
+			let params: contracts.AgentNotebookMaterializedParams = { ownerUri: ownerUri, targetDatabase: targetDatabase, notebookMaterializedId: notebookMaterializedId };
+			return client.sendRequest(contracts.AgentNotebookMaterializedRequest
+				.type, params).then(
+					r => r,
+					e => {
+						client.logFailedRequest(contracts.AgentNotebookMaterializedRequest.type, e);
+						return Promise.resolve(undefined);
+					}
+				);
+		};
+
+		const getTemplateNotebook = (ownerUri: string, targetDatabase: string, jobId: string): Thenable<azdata.AgentNotebookTemplateResult> => {
+			let params: contracts.AgentNotebookTemplateParams = { ownerUri: ownerUri, targetDatabase: targetDatabase, jobId: jobId };
+			return client.sendRequest(contracts.AgentNotebookTemplateRequest
+				.type, params).then(
+					r => r,
+					e => {
+						client.logFailedRequest(contracts.AgentNotebookTemplateRequest.type, e);
+						return Promise.resolve(undefined);
+					}
+				);
+		};
+
+		const createNotebook = (ownerUri: string, notebookInfo: azdata.AgentNotebookInfo, templateFilePath: string): Thenable<azdata.CreateAgentNotebookResult> => {
+			let params: contracts.CreateAgentNotebookParams = {
+				ownerUri: ownerUri,
+				notebook: notebookInfo,
+				templateFilePath: templateFilePath
+			};
+			let requestType = contracts.CreateAgentNotebookRequest.type;
+			return client.sendRequest(requestType, params).then(
+				r => {
+					fireOnUpdated();
+					return r;
+				},
+				e => {
+					client.logFailedRequest(requestType, e);
+					return Promise.resolve(undefined);
+				}
+			);
+		};
+
+
+		const updateNotebook = (ownerUri: string, originalNotebookName: string, notebookInfo: azdata.AgentNotebookInfo, templateFilePath: string): Thenable<azdata.UpdateAgentNotebookResult> => {
+			let params: contracts.UpdateAgentNotebookParams = {
+				ownerUri: ownerUri,
+				originalNotebookName: originalNotebookName,
+				notebook: notebookInfo,
+				templateFilePath: templateFilePath
+			};
+			let requestType = contracts.UpdateAgentNotebookRequest.type;
+			return client.sendRequest(requestType, params).then(
+				r => {
+					fireOnUpdated();
+					return r;
+				},
+				e => {
+					client.logFailedRequest(requestType, e);
+					return Promise.resolve(undefined);
+				}
+			);
+		};
+
+		const deleteNotebook = (ownerUri: string, notebookInfo: azdata.AgentNotebookInfo): Thenable<azdata.ResultStatus> => {
+			let params: contracts.DeleteAgentNotebookParams = {
+				ownerUri: ownerUri,
+				notebook: notebookInfo
+			};
+			let requestType = contracts.DeleteAgentNotebookRequest.type;
+			return client.sendRequest(requestType, params).then(
+				r => {
+					fireOnUpdated();
+					return r;
+				},
+				e => {
+					client.logFailedRequest(requestType, e);
+					return Promise.resolve(undefined);
+				}
+			);
+		};
+
+		const deleteMaterializedNotebook = (ownerUri: string, agentNotebookHistory: azdata.AgentNotebookHistoryInfo, targetDatabase: string): Thenable<azdata.ResultStatus> => {
+			let params: contracts.DeleteAgentMaterializedNotebookParams = { ownerUri: ownerUri, targetDatabase: targetDatabase, agentNotebookHistory: agentNotebookHistory };
+			return client.sendRequest(contracts.DeleteMaterializedNotebookRequest
+				.type, params).then(
+					r => r,
+					e => {
+						client.logFailedRequest(contracts.DeleteMaterializedNotebookRequest.type, e);
+						return Promise.resolve(undefined);
+					}
+				);
+		};
+
+		const updateNotebookMaterializedName = (ownerUri: string, agentNotebookHistory: azdata.AgentNotebookHistoryInfo, targetDatabase: string, name: string): Thenable<azdata.ResultStatus> => {
+			let params: contracts.UpdateAgentNotebookRunNameParams = { ownerUri: ownerUri, targetDatabase: targetDatabase, agentNotebookHistory: agentNotebookHistory, materializedNotebookName: name };
+			return client.sendRequest(contracts.UpdateAgentNotebookRunNameRequest
+				.type, params).then(
+					r => r,
+					e => {
+						client.logFailedRequest(contracts.UpdateAgentNotebookRunNameRequest.type, e);
+						return Promise.resolve(undefined);
+					}
+				);
+		};
+
+		const updateNotebookMaterializedPin = (ownerUri: string, agentNotebookHistory: azdata.AgentNotebookHistoryInfo, targetDatabase: string, pin: boolean): Thenable<azdata.ResultStatus> => {
+			let params: contracts.UpdateAgentNotebookRunPinParams = { ownerUri: ownerUri, targetDatabase: targetDatabase, agentNotebookHistory: agentNotebookHistory, materializedNotebookPin: pin };
+			return client.sendRequest(contracts.UpdateAgentNotebookRunPinRequest
+				.type, params).then(
+					r => r,
+					e => {
+						client.logFailedRequest(contracts.UpdateAgentNotebookRunPinRequest.type, e);
+						return Promise.resolve(undefined);
+					}
+				);
+		};
+
+
+
 		// Alert management methods
-		let  getAlerts = (ownerUri: string): Thenable<sqlops.AgentAlertsResult>  => {
+		let getAlerts = (ownerUri: string): Thenable<azdata.AgentAlertsResult> => {
 			let params: contracts.AgentAlertsParams = {
 				ownerUri: ownerUri
 			};
@@ -243,7 +466,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let createAlert = (ownerUri: string, alertInfo: sqlops.AgentAlertInfo): Thenable<sqlops.CreateAgentAlertResult> => {
+		let createAlert = (ownerUri: string, alertInfo: azdata.AgentAlertInfo): Thenable<azdata.CreateAgentAlertResult> => {
 			let params: contracts.CreateAgentAlertParams = {
 				ownerUri: ownerUri,
 				alert: alertInfo
@@ -261,7 +484,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let updateAlert = (ownerUri: string, originalAlertName: string, alertInfo: sqlops.AgentAlertInfo): Thenable<sqlops.UpdateAgentAlertResult> => {
+		let updateAlert = (ownerUri: string, originalAlertName: string, alertInfo: azdata.AgentAlertInfo): Thenable<azdata.UpdateAgentAlertResult> => {
 			let params: contracts.UpdateAgentAlertParams = {
 				ownerUri: ownerUri,
 				originalAlertName: originalAlertName,
@@ -280,7 +503,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let deleteAlert = (ownerUri: string, alertInfo: sqlops.AgentAlertInfo): Thenable<sqlops.ResultStatus> => {
+		let deleteAlert = (ownerUri: string, alertInfo: azdata.AgentAlertInfo): Thenable<azdata.ResultStatus> => {
 			let params: contracts.DeleteAgentAlertParams = {
 				ownerUri: ownerUri,
 				alert: alertInfo
@@ -299,7 +522,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 		};
 
 		// Operator management methods
-		let  getOperators = (ownerUri: string): Thenable<sqlops.AgentOperatorsResult>  => {
+		let getOperators = (ownerUri: string): Thenable<azdata.AgentOperatorsResult> => {
 			let params: contracts.AgentOperatorsParams = {
 				ownerUri: ownerUri
 			};
@@ -313,7 +536,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let createOperator = (ownerUri: string, operatorInfo: sqlops.AgentOperatorInfo): Thenable<sqlops.CreateAgentOperatorResult> => {
+		let createOperator = (ownerUri: string, operatorInfo: azdata.AgentOperatorInfo): Thenable<azdata.CreateAgentOperatorResult> => {
 			let params: contracts.CreateAgentOperatorParams = {
 				ownerUri: ownerUri,
 				operator: operatorInfo
@@ -331,7 +554,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let updateOperator = (ownerUri: string, originalOperatorName: string, operatorInfo: sqlops.AgentOperatorInfo): Thenable<sqlops.UpdateAgentOperatorResult> => {
+		let updateOperator = (ownerUri: string, originalOperatorName: string, operatorInfo: azdata.AgentOperatorInfo): Thenable<azdata.UpdateAgentOperatorResult> => {
 			let params: contracts.UpdateAgentOperatorParams = {
 				ownerUri: ownerUri,
 				originalOperatorName: originalOperatorName,
@@ -350,7 +573,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let deleteOperator = (ownerUri: string, operatorInfo: sqlops.AgentOperatorInfo): Thenable<sqlops.ResultStatus> => {
+		let deleteOperator = (ownerUri: string, operatorInfo: azdata.AgentOperatorInfo): Thenable<azdata.ResultStatus> => {
 			let params: contracts.DeleteAgentOperatorParams = {
 				ownerUri: ownerUri,
 				operator: operatorInfo
@@ -369,7 +592,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 		};
 
 		// Proxy management methods
-		let  getProxies = (ownerUri: string): Thenable<sqlops.AgentProxiesResult>  => {
+		let getProxies = (ownerUri: string): Thenable<azdata.AgentProxiesResult> => {
 			let params: contracts.AgentProxiesParams = {
 				ownerUri: ownerUri
 			};
@@ -383,7 +606,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let createProxy = (ownerUri: string, proxyInfo: sqlops.AgentProxyInfo): Thenable<sqlops.CreateAgentOperatorResult> => {
+		let createProxy = (ownerUri: string, proxyInfo: azdata.AgentProxyInfo): Thenable<azdata.CreateAgentOperatorResult> => {
 			let params: contracts.CreateAgentProxyParams = {
 				ownerUri: ownerUri,
 				proxy: proxyInfo
@@ -401,7 +624,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let updateProxy = (ownerUri: string, originalProxyName: string, proxyInfo: sqlops.AgentProxyInfo): Thenable<sqlops.UpdateAgentOperatorResult> => {
+		let updateProxy = (ownerUri: string, originalProxyName: string, proxyInfo: azdata.AgentProxyInfo): Thenable<azdata.UpdateAgentOperatorResult> => {
 			let params: contracts.UpdateAgentProxyParams = {
 				ownerUri: ownerUri,
 				originalProxyName: originalProxyName,
@@ -420,7 +643,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let deleteProxy = (ownerUri: string, proxyInfo: sqlops.AgentProxyInfo): Thenable<sqlops.ResultStatus> => {
+		let deleteProxy = (ownerUri: string, proxyInfo: azdata.AgentProxyInfo): Thenable<azdata.ResultStatus> => {
 			let params: contracts.DeleteAgentProxyParams = {
 				ownerUri: ownerUri,
 				proxy: proxyInfo
@@ -439,7 +662,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 		};
 
 		// Agent Credential Method
-		let  getCredentials = (ownerUri: string): Thenable<sqlops.GetCredentialsResult>  => {
+		let getCredentials = (ownerUri: string): Thenable<azdata.GetCredentialsResult> => {
 			let params: contracts.GetCredentialsParams = {
 				ownerUri: ownerUri
 			};
@@ -455,7 +678,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 
 
 		// Job Schedule management methods
-		let  getJobSchedules = (ownerUri: string): Thenable<sqlops.AgentJobSchedulesResult>  => {
+		let getJobSchedules = (ownerUri: string): Thenable<azdata.AgentJobSchedulesResult> => {
 			let params: contracts.AgentJobScheduleParams = {
 				ownerUri: ownerUri
 			};
@@ -469,7 +692,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let createJobSchedule = (ownerUri: string, scheduleInfo: sqlops.AgentJobScheduleInfo): Thenable<sqlops.CreateAgentJobScheduleResult> => {
+		let createJobSchedule = (ownerUri: string, scheduleInfo: azdata.AgentJobScheduleInfo): Thenable<azdata.CreateAgentJobScheduleResult> => {
 			let params: contracts.CreateAgentJobScheduleParams = {
 				ownerUri: ownerUri,
 				schedule: scheduleInfo
@@ -487,7 +710,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let updateJobSchedule = (ownerUri: string, originalScheduleName: string, scheduleInfo: sqlops.AgentJobScheduleInfo): Thenable<sqlops.UpdateAgentJobScheduleResult> => {
+		let updateJobSchedule = (ownerUri: string, originalScheduleName: string, scheduleInfo: azdata.AgentJobScheduleInfo): Thenable<azdata.UpdateAgentJobScheduleResult> => {
 			let params: contracts.UpdateAgentJobScheduleParams = {
 				ownerUri: ownerUri,
 				originalScheduleName: originalScheduleName,
@@ -506,7 +729,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		let deleteJobSchedule = (ownerUri: string, scheduleInfo: sqlops.AgentJobScheduleInfo): Thenable<sqlops.ResultStatus> => {
+		let deleteJobSchedule = (ownerUri: string, scheduleInfo: azdata.AgentJobScheduleInfo): Thenable<azdata.ResultStatus> => {
 			let params: contracts.DeleteAgentJobScheduleParams = {
 				ownerUri: ownerUri,
 				schedule: scheduleInfo
@@ -524,7 +747,7 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			);
 		};
 
-		return sqlops.dataprotocol.registerAgentServicesProvider({
+		return azdata.dataprotocol.registerAgentServicesProvider({
 			providerId: client.providerId,
 			getJobs,
 			getJobHistory,
@@ -536,6 +759,16 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			createJobStep,
 			updateJobStep,
 			deleteJobStep,
+			getNotebooks,
+			getNotebookHistory,
+			getMaterializedNotebook,
+			getTemplateNotebook,
+			createNotebook,
+			updateNotebook,
+			deleteMaterializedNotebook,
+			updateNotebookMaterializedName,
+			updateNotebookMaterializedPin,
+			deleteNotebook,
 			getAlerts,
 			createAlert,
 			updateAlert,
@@ -554,6 +787,68 @@ export class AgentServicesFeature extends SqlOpsFeature<undefined> {
 			updateJobSchedule,
 			deleteJobSchedule,
 			registerOnUpdated
+		});
+	}
+}
+
+
+export class SerializationFeature extends SqlOpsFeature<undefined> {
+	private static readonly messageTypes: RPCMessageType[] = [
+		contracts.SerializeDataStartRequest.type,
+		contracts.SerializeDataContinueRequest.type,
+	];
+
+	constructor(client: SqlOpsDataClient) {
+		super(client, SerializationFeature.messageTypes);
+	}
+
+	public fillClientCapabilities(capabilities: ClientCapabilities): void {
+	}
+
+	public initialize(capabilities: ServerCapabilities): void {
+		this.register(this.messages, {
+			id: UUID.generateUuid(),
+			registerOptions: undefined
+		});
+	}
+
+	protected registerProvider(options: undefined): Disposable {
+		const client = this._client;
+
+		let startSerialization = (requestParams: azdata.SerializeDataStartRequestParams): Thenable<azdata.SerializeDataResult> => {
+			return client.sendRequest(contracts.SerializeDataStartRequest.type, requestParams).then(
+				r => {
+					return r;
+				},
+				e => {
+					client.logFailedRequest(contracts.SerializeDataStartRequest.type, e);
+					return Promise.resolve(<azdata.SerializeDataResult>{
+						succeeded: false,
+						messages: Utils.getErrorMessage(e)
+					});
+				}
+			);
+		};
+
+		let continueSerialization = (requestParams: azdata.SerializeDataContinueRequestParams): Thenable<azdata.SerializeDataResult> => {
+			return client.sendRequest(contracts.SerializeDataContinueRequest.type, requestParams).then(
+				r => {
+					return r;
+				},
+				e => {
+					client.logFailedRequest(contracts.SerializeDataContinueRequest.type, e);
+					return Promise.resolve(<azdata.SerializeDataResult>{
+						succeeded: false,
+						messages: Utils.getErrorMessage(e)
+					});
+				}
+			);
+		};
+
+		return azdata.dataprotocol.registerSerializationProvider({
+			providerId: client.providerId,
+			startSerialization,
+			continueSerialization
 		});
 	}
 }
